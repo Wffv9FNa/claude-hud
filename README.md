@@ -39,6 +39,13 @@ Then run the install command below in that session. This is a [Claude Code platf
 /plugin install claude-hud
 ```
 
+After that, reload plugins:
+
+```
+/reload-plugins
+```
+
+
 **Step 3: Configure the statusline**
 ```
 /claude-hud:setup
