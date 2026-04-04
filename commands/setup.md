@@ -223,6 +223,10 @@ If a write fails with `File has been unexpectedly modified`, re-read the file an
 }
 ```
 
+**JSON safety**: Write `settings.json` with a real JSON serializer or editor API, not manual string concatenation.
+If you must inspect the saved JSON manually, the embedded bash command must preserve escaped backslashes inside the awk fragment.
+For example, the saved JSON should contain `\\$(NF-1)` and `\\$0`, not `\$(NF-1)` and `\$0`.
+
 
 After successfully writing the config, tell the user:
 
