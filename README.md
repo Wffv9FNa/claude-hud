@@ -97,6 +97,14 @@ Context █████░░░░░ 45% │ Usage ██░░░░░░░
 ▸ Fix authentication bug (2/5)                   ← Todo progress
 ```
 
+Prefer a richer per-agent view? Set `display.agentsFormat: "multiline"`:
+```
+agents:2
+├─ e explore      45s  searching for test files
+└─ A architect     2m  analyzing architecture patterns
+```
+Uppercase codes mean Opus; lowercase means Sonnet/Haiku. Duration colour escalates from green to yellow to red as agents run longer.
+
 ---
 
 ## How It Works
@@ -176,6 +184,8 @@ Chinese HUD labels are available as an explicit opt-in. English stays the defaul
 | `display.showTokenBreakdown` | boolean | true | Show token details at high context (85%+) |
 | `display.showTools` | boolean | false | Show tools activity line |
 | `display.showAgents` | boolean | false | Show agents activity line |
+| `display.agentsFormat` | `compact` \| `multiline` | `compact` | Agent line style. `compact` shows one line per agent (default). `multiline` shows a tree block (`├─` / `└─`) with padded columns and colour-escalated durations. |
+| `display.agentsMaxLines` | 1-20 | 5 | Cap on agent detail rows in `multiline` mode. Overflow becomes `+N more agents...`. |
 | `display.showTodos` | boolean | false | Show todos progress line |
 | `display.showSessionName` | boolean | false | Show session slug or custom title from `/rename` |
 | `display.showClaudeCodeVersion` | boolean | false | Show the installed Claude Code version, e.g. `CC v2.1.81` |

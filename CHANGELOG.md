@@ -4,6 +4,13 @@ All notable changes to Claude HUD will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- `display.agentsFormat` config option with values `compact` (default) and `multiline`.
+  Multiline mode renders agents as a tree block with padded columns, model-tier colouring,
+  CJK-aware description truncation, and duration-based colour escalation. Ported from
+  oh-my-claudecode's HUD agent element.
+- `display.agentsMaxLines` (default 5, range 1-20) to cap detail rows in multiline mode.
+
 ## [0.0.12] - 2026-04-04
 
 ### Added
