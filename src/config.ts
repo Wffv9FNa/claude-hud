@@ -17,6 +17,12 @@ export type ContextValueMode = 'percent' | 'tokens' | 'remaining' | 'both';
  *   short:   Strip context suffix AND "Claude " prefix (e.g. "Opus 4.6")
  */
 export type ModelFormatMode = 'full' | 'compact' | 'short';
+/**
+ * Agent display format:
+ *   compact  - Single-line per agent: ◐ explore [haiku]: desc (2m 15s)
+ *   multiline - Tree-style per agent: ├─ e explore  45s  searching for test files
+ */
+export type AgentsFormat = 'compact' | 'multiline';
 export type HudElement = 'project' | 'context' | 'usage' | 'memory' | 'environment' | 'tools' | 'agents' | 'todos';
 export type HudColorName =
   | 'dim'
@@ -86,6 +92,8 @@ export interface HudConfig {
     usageBarEnabled: boolean;
     showTools: boolean;
     showAgents: boolean;
+    agentsFormat: AgentsFormat;
+    agentsMaxLines: number;
     showTodos: boolean;
     showSessionName: boolean;
     showClaudeCodeVersion: boolean;
@@ -131,6 +139,8 @@ export const DEFAULT_CONFIG: HudConfig = {
     usageBarEnabled: true,
     showTools: false,
     showAgents: false,
+    agentsFormat: 'compact',
+    agentsMaxLines: 5,
     showTodos: false,
     showSessionName: false,
     showClaudeCodeVersion: false,
@@ -187,6 +197,17 @@ function validateLanguage(value: unknown): value is Language {
 
 function validateModelFormat(value: unknown): value is ModelFormatMode {
   return value === 'full' || value === 'compact' || value === 'short';
+}
+
+function validateAgentsFormat(value: unknown): value is AgentsFormat {
+  return value === 'compact' || value === 'multiline';
+}
+
+function clampAgentsMaxLines(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    return DEFAULT_CONFIG.display.agentsMaxLines;
+  }
+  return Math.max(1, Math.min(20, Math.floor(v)));
 }
 
 function validateColorName(value: unknown): value is HudColorName {
@@ -353,6 +374,10 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     showAgents: typeof migrated.display?.showAgents === 'boolean'
       ? migrated.display.showAgents
       : DEFAULT_CONFIG.display.showAgents,
+    agentsFormat: validateAgentsFormat(migrated.display?.agentsFormat)
+      ? migrated.display.agentsFormat
+      : DEFAULT_CONFIG.display.agentsFormat,
+    agentsMaxLines: clampAgentsMaxLines(migrated.display?.agentsMaxLines),
     showTodos: typeof migrated.display?.showTodos === 'boolean'
       ? migrated.display.showTodos
       : DEFAULT_CONFIG.display.showTodos,

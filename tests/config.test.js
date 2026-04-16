@@ -490,3 +490,48 @@ test('mergeConfig rejects invalid hex strings', () => {
   assert.equal(config.colors.usage, DEFAULT_CONFIG.colors.usage);
   assert.equal(config.colors.warning, DEFAULT_CONFIG.colors.warning);
 });
+
+// --- agentsFormat / agentsMaxLines tests ---
+
+test('mergeConfig defaults agentsFormat to compact', () => {
+  assert.equal(mergeConfig({}).display.agentsFormat, 'compact');
+});
+
+test('mergeConfig defaults agentsMaxLines to 5', () => {
+  assert.equal(mergeConfig({}).display.agentsMaxLines, 5);
+});
+
+test('mergeConfig preserves agentsFormat=multiline', () => {
+  assert.equal(
+    mergeConfig({ display: { agentsFormat: 'multiline' } }).display.agentsFormat,
+    'multiline'
+  );
+});
+
+test('mergeConfig falls back to compact for invalid agentsFormat', () => {
+  assert.equal(
+    mergeConfig({ display: { agentsFormat: 'bogus' } }).display.agentsFormat,
+    'compact'
+  );
+});
+
+test('mergeConfig clamps agentsMaxLines below range to 1', () => {
+  assert.equal(
+    mergeConfig({ display: { agentsMaxLines: -3 } }).display.agentsMaxLines,
+    1
+  );
+});
+
+test('mergeConfig clamps agentsMaxLines above range to 20', () => {
+  assert.equal(
+    mergeConfig({ display: { agentsMaxLines: 99 } }).display.agentsMaxLines,
+    20
+  );
+});
+
+test('mergeConfig falls back to default agentsMaxLines for non-numeric input', () => {
+  assert.equal(
+    mergeConfig({ display: { agentsMaxLines: 'seven' } }).display.agentsMaxLines,
+    5
+  );
+});

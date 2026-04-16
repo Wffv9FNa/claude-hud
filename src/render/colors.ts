@@ -145,3 +145,25 @@ export function coloredBar(percent: number, width: number = 10, colors?: Partial
   const color = getContextColor(safePercent, colors);
   return `${color}${'█'.repeat(filled)}${DIM}${'░'.repeat(empty)}${RESET}`;
 }
+
+/**
+ * Colour for model tier (Opus magenta, Sonnet yellow, Haiku green, unknown cyan).
+ */
+export function getModelTierColor(model: string | undefined): string {
+  if (!model) return CYAN;
+  const tier = model.toLowerCase();
+  if (tier.includes('opus')) return MAGENTA;
+  if (tier.includes('sonnet')) return YELLOW;
+  if (tier.includes('haiku')) return GREEN;
+  return CYAN;
+}
+
+/**
+ * Colour-escalate by agent duration (<2min green, 2-5min yellow, 5min+ red).
+ */
+export function getDurationColor(durationMs: number): string {
+  const minutes = durationMs / 60000;
+  if (minutes >= 5) return RED;
+  if (minutes >= 2) return YELLOW;
+  return GREEN;
+}

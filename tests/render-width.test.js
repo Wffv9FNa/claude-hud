@@ -41,6 +41,8 @@ function baseContext() {
         usageBarEnabled: false,
         showTools: true,
         showAgents: true,
+        agentsFormat: 'compact',
+        agentsMaxLines: 5,
         showTodos: true,
         autocompactBuffer: 'enabled',
         usageThreshold: 0,
