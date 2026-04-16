@@ -945,6 +945,58 @@ test('renderAgentsLine clamps negative elapsed time to under one second', () => 
   assert.ok(line?.includes('<1s'));
 });
 
+test('render pipeline emits multiline agent tree when agentsFormat=multiline', () => {
+  const ctx = baseContext();
+  ctx.config.display.agentsFormat = 'multiline';
+  ctx.config.display.agentsMaxLines = 3;
+  const now = Date.now();
+  ctx.transcript.agents = [
+    {
+      id: 'run-1',
+      type: 'explore',
+      model: 'haiku',
+      status: 'running',
+      startTime: new Date(now - 30_000),
+      description: 'searching for test files',
+    },
+    {
+      id: 'run-2',
+      type: 'architect',
+      model: 'opus',
+      status: 'running',
+      startTime: new Date(now - 90_000),
+      description: 'analyzing architecture patterns',
+    },
+    {
+      id: 'done-1',
+      type: 'planner',
+      model: 'sonnet',
+      status: 'completed',
+      startTime: new Date(now - 180_000),
+      endTime: new Date(now - 30_000),
+      description: 'should not render in multiline',
+    },
+  ];
+
+  let lines = [];
+  withTerminal(120, () => {
+    lines = captureRenderLines(ctx);
+  });
+
+  assert.ok(
+    lines.some((line) => line.startsWith('\u251C\u2500') || line.startsWith('\u2514\u2500')),
+    `expected at least one tree-prefixed agent line: ${lines.join(' | ')}`
+  );
+  assert.ok(
+    lines.some((line) => line.includes('agents:2')),
+    `expected agents:2 count header: ${lines.join(' | ')}`
+  );
+  assert.ok(
+    !lines.some((line) => line.includes('planner')),
+    `completed agent should not surface in multiline output: ${lines.join(' | ')}`
+  );
+});
+
 test('renderTodosLine handles in-progress and completed-only cases', () => {
   const ctx = baseContext();
   ctx.transcript.todos = [
