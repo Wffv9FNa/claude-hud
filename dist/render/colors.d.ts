@@ -19,4 +19,12 @@ export declare function getContextColor(percent: number, colors?: Partial<HudCol
 export declare function getQuotaColor(percent: number, colors?: Partial<HudColorOverrides>): string;
 export declare function quotaBar(percent: number, width?: number, colors?: Partial<HudColorOverrides>): string;
 export declare function coloredBar(percent: number, width?: number, colors?: Partial<HudColorOverrides>): string;
+/**
+ * Colour for model tier (Opus magenta, Sonnet yellow, Haiku green, unknown cyan).
+ */
+export declare function getModelTierColor(model: string | undefined): string;
+/**
+ * Colour-escalate by agent duration (<2min green, 2-5min yellow, 5min+ red).
+ */
+export declare function getDurationColor(durationMs: number): string;
 //# sourceMappingURL=colors.d.ts.map

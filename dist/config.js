@@ -41,6 +41,8 @@ export const DEFAULT_CONFIG = {
         usageBarEnabled: true,
         showTools: false,
         showAgents: false,
+        agentsFormat: 'compact',
+        agentsMaxLines: 5,
         showTodos: false,
         showSessionName: false,
         showClaudeCodeVersion: false,
@@ -90,6 +92,15 @@ function validateLanguage(value) {
 }
 function validateModelFormat(value) {
     return value === 'full' || value === 'compact' || value === 'short';
+}
+function validateAgentsFormat(value) {
+    return value === 'compact' || value === 'multiline';
+}
+function clampAgentsMaxLines(v) {
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+        return DEFAULT_CONFIG.display.agentsMaxLines;
+    }
+    return Math.max(1, Math.min(20, Math.floor(v)));
 }
 function validateColorName(value) {
     return value === 'dim'
@@ -240,6 +251,10 @@ export function mergeConfig(userConfig) {
         showAgents: typeof migrated.display?.showAgents === 'boolean'
             ? migrated.display.showAgents
             : DEFAULT_CONFIG.display.showAgents,
+        agentsFormat: validateAgentsFormat(migrated.display?.agentsFormat)
+            ? migrated.display.agentsFormat
+            : DEFAULT_CONFIG.display.agentsFormat,
+        agentsMaxLines: clampAgentsMaxLines(migrated.display?.agentsMaxLines),
         showTodos: typeof migrated.display?.showTodos === 'boolean'
             ? migrated.display.showTodos
             : DEFAULT_CONFIG.display.showTodos,

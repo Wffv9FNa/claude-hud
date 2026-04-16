@@ -10,6 +10,12 @@ export type ContextValueMode = 'percent' | 'tokens' | 'remaining' | 'both';
  *   short:   Strip context suffix AND "Claude " prefix (e.g. "Opus 4.6")
  */
 export type ModelFormatMode = 'full' | 'compact' | 'short';
+/**
+ * Agent display format:
+ *   compact  - Single-line per agent: ◐ explore [haiku]: desc (2m 15s)
+ *   multiline - Tree-style per agent: ├─ e explore  45s  searching for test files
+ */
+export type AgentsFormat = 'compact' | 'multiline';
 export type HudElement = 'project' | 'context' | 'usage' | 'memory' | 'environment' | 'tools' | 'agents' | 'todos';
 export type HudColorName = 'dim' | 'red' | 'green' | 'yellow' | 'magenta' | 'cyan' | 'brightBlue' | 'brightMagenta';
 /** A color value: named preset, 256-color index (0-255), or hex string (#rrggbb). */
@@ -56,6 +62,8 @@ export interface HudConfig {
         usageBarEnabled: boolean;
         showTools: boolean;
         showAgents: boolean;
+        agentsFormat: AgentsFormat;
+        agentsMaxLines: number;
         showTodos: boolean;
         showSessionName: boolean;
         showClaudeCodeVersion: boolean;

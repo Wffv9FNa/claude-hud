@@ -1,7 +1,15 @@
 import { yellow, green, magenta, label } from './colors.js';
+import { renderAgentsMultiLine } from './agents-multiline.js';
 const MAX_RECENT_COMPLETED = 2;
 const MAX_AGENTS_SHOWN = 3;
 export function renderAgentsLine(ctx) {
+    const format = ctx.config?.display?.agentsFormat ?? 'compact';
+    if (format === 'multiline') {
+        return renderAgentsMultilineWrapped(ctx);
+    }
+    return renderAgentsCompact(ctx);
+}
+function renderAgentsCompact(ctx) {
     const { agents } = ctx.transcript;
     const colors = ctx.config?.colors;
     const runningAgents = agents.filter((a) => a.status === 'running');
@@ -25,6 +33,30 @@ export function renderAgentsLine(ctx) {
         lines.push(formatAgent(agent, colors));
     }
     return lines.join('\n');
+}
+function renderAgentsMultilineWrapped(ctx) {
+    const { agents } = ctx.transcript;
+    const runningAgents = agents.filter((a) => a.status === 'running');
+    const recentCompleted = agents
+        .filter((a) => a.status === 'completed')
+        .slice(-MAX_RECENT_COMPLETED);
+    const seen = new Set();
+    const inputAgents = [...runningAgents, ...recentCompleted]
+        .filter((a) => {
+        if (seen.has(a.id))
+            return false;
+        seen.add(a.id);
+        return true;
+    })
+        .slice(-MAX_AGENTS_SHOWN);
+    const maxLines = ctx.config?.display?.agentsMaxLines ?? 5;
+    // renderAgentsMultiLine filters internally to status === 'running';
+    // recentCompleted entries are silently dropped in multiline mode.
+    const { headerPart, detailLines } = renderAgentsMultiLine(inputAgents, maxLines);
+    if (detailLines.length === 0) {
+        return null;
+    }
+    return [headerPart, ...detailLines].join('\n');
 }
 function getStatusIcon(status) {
     switch (status) {
