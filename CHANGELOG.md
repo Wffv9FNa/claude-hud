@@ -2,6 +2,40 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.0.14] - 2026-04-17
+
+### Fixed
+- Terminal-width detection inside the statusline subprocess. Claude Code
+  spawns the statusline with stdin+stdout piped, no `COLUMNS` env var, and
+  no controlling tty, so `process.stdout.columns`, `process.stderr.columns`
+  and `env.COLUMNS` were all undefined and `getTerminalWidth()` fell back
+  to the 40-column unknown-terminal default. The statusline now probes
+  `/dev/tty` via `stty -F /dev/tty size` as a fourth detection step in a
+  new `detectTerminalColumns()` helper (`src/utils/terminal.ts`), which
+  both `render/index.ts::getTerminalWidth()` and `getAdaptiveBarWidth()`
+  delegate to. Context+usage+weekly merges and `environment`+`tools`
+  merges now render on a single wide line as intended.
+- Background-agent tracking in the transcript parser. Previously the first
+  `tool_result` for a `Task`/`Agent` `tool_use` marked the agent as
+  `completed`, but for background-launched agents that first result is an
+  "Async agent launched successfully" ACK rather than a real completion,
+  so background agents immediately disappeared from the HUD multiline
+  tree. The parser now:
+  - recognises the ACK by `startsWith("Async agent launched")` on the
+    trimmed text (not `.includes()`, which misclassifies completion
+    reports that quote an earlier launch message);
+  - records the `agentId -> tool_use_id` mapping extracted from the ACK;
+  - keeps status as `running` until the matching `<task-notification>`
+    block arrives with `<status>completed</status>`;
+  - handles both the string-content message form (user-role message whose
+    `message.content` is a plain string, not an array) and nested
+    `<task-notification>` blocks carried inside a foreground
+    `tool_result`;
+  - accepts both hyphen (`<task-id>`, `<tool-use-id>`) and underscore
+    (`<task_id>`, `<tool_use_id>`) variants of the notification tags;
+  - recognises `proxy_Task`, `proxy_Agent` and `proxy_TodoWrite` tool
+    names alongside the bare `Task`, `Agent` and `TodoWrite` variants.
+
 ## [0.0.13] - 2026-04-17
 
 ### Added

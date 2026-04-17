@@ -12,7 +12,11 @@ interface TranscriptLine {
   slug?: string;
   customTitle?: string;
   message?: {
-    content?: ContentBlock[];
+    // Claude Code writes assistant/user messages with either a content-block
+    // array (normal messages) OR a plain string (e.g. background-agent
+    // `<task-notification>` blocks land as user-role messages with
+    // `content: "<task-notification>...</task-notification>"`).
+    content?: ContentBlock[] | string;
     usage?: {
       input_tokens?: number;
       output_tokens?: number;
@@ -29,7 +33,13 @@ interface ContentBlock {
   input?: Record<string, unknown>;
   tool_use_id?: string;
   is_error?: boolean;
+  content?: string | Array<{ type?: string; text?: string }>;
 }
+
+// Map from background agent IDs (e.g. "a8de3dd") to tool_use_id. Populated
+// when a Task/Agent tool_result carries an "Async agent launched" ACK, then
+// drained when the matching <task-notification> completion arrives later.
+type BackgroundAgentMap = Map<string, string>;
 
 interface TranscriptFileState {
   mtimeMs: number;
@@ -200,6 +210,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
 
   const toolMap = new Map<string, ToolEntry>();
   const agentMap = new Map<string, AgentEntry>();
+  const backgroundAgentMap: BackgroundAgentMap = new Map();
   let latestTodos: TodoItem[] = [];
   const taskIdToIndex = new Map<string, number>();
   let latestSlug: string | undefined;
@@ -238,7 +249,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
           sessionTokens.cacheCreationTokens += normalizeTokenCount(usage.cache_creation_input_tokens);
           sessionTokens.cacheReadTokens += normalizeTokenCount(usage.cache_read_input_tokens);
         }
-        processEntry(entry, toolMap, agentMap, taskIdToIndex, latestTodos, result);
+        processEntry(entry, toolMap, agentMap, taskIdToIndex, latestTodos, result, backgroundAgentMap);
       } catch {
         // Skip malformed lines
       }
@@ -265,13 +276,82 @@ export function _setCreateReadStreamForTests(impl: typeof fs.createReadStream | 
   createReadStreamImpl = impl ?? fs.createReadStream;
 }
 
+/**
+ * Extract the background agent ID from an "Async agent launched" tool_result.
+ * Matches the first `agentId: xxx` token in the content text.
+ */
+function extractBackgroundAgentId(
+  content: string | Array<{ type?: string; text?: string }> | undefined
+): string | null {
+  if (content == null) return null;
+  const text = typeof content === 'string'
+    ? content
+    : (content.find((c) => c?.type === 'text')?.text ?? '');
+  const match = text.match(/agentId:\s*([a-zA-Z0-9]+)/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Parse a `<task-notification>` block reporting a background-agent completion.
+ *
+ * Claude Code emits the real payload with hyphen-cased tags (`<task-id>`,
+ * `<tool-use-id>`, `<status>`). Accept the underscore variant too for defence
+ * in depth against future schema changes.
+ */
+function parseTaskOutputResult(
+  content: string | Array<{ type?: string; text?: string }> | undefined
+): { taskId: string; toolUseId: string | null; status: string } | null {
+  if (content == null) return null;
+  const text = typeof content === 'string'
+    ? content
+    : (content.find((c) => c?.type === 'text')?.text ?? '');
+
+  const taskIdMatch =
+    text.match(/<task-id>([^<]+)<\/task-id>/)
+    ?? text.match(/<task_id>([^<]+)<\/task_id>/);
+  const statusMatch = text.match(/<status>([^<]+)<\/status>/);
+  const toolUseIdMatch =
+    text.match(/<tool-use-id>([^<]+)<\/tool-use-id>/)
+    ?? text.match(/<tool_use_id>([^<]+)<\/tool_use_id>/);
+
+  if (taskIdMatch && statusMatch) {
+    return {
+      taskId: taskIdMatch[1],
+      toolUseId: toolUseIdMatch ? toolUseIdMatch[1] : null,
+      status: statusMatch[1],
+    };
+  }
+  return null;
+}
+
+const ASYNC_LAUNCH_PREFIX = 'Async agent launched';
+
+function startsWithAsyncLaunch(text: string | undefined): boolean {
+  return !!text && text.trimStart().startsWith(ASYNC_LAUNCH_PREFIX);
+}
+
+function isAsyncAgentLaunchResult(
+  content: string | Array<{ type?: string; text?: string }> | undefined
+): boolean {
+  if (content == null) return false;
+  if (typeof content === 'string') {
+    return startsWithAsyncLaunch(content);
+  }
+  if (!Array.isArray(content) || content.length === 0) return false;
+  const first = content[0];
+  if (!first || typeof first !== 'object') return false;
+  if ((first as { type?: string }).type !== 'text') return false;
+  return startsWithAsyncLaunch((first as { text?: string }).text);
+}
+
 function processEntry(
   entry: TranscriptLine,
   toolMap: Map<string, ToolEntry>,
   agentMap: Map<string, AgentEntry>,
   taskIdToIndex: Map<string, number>,
   latestTodos: TodoItem[],
-  result: TranscriptData
+  result: TranscriptData,
+  backgroundAgentMap?: BackgroundAgentMap
 ): void {
   const timestamp = entry.timestamp ? new Date(entry.timestamp) : new Date();
 
@@ -280,6 +360,42 @@ function processEntry(
   }
 
   const content = entry.message?.content;
+
+  // Claude Code emits background-agent completion as a user-role message whose
+  // `content` is a plain string rather than a content-block array, e.g.
+  // `<task-notification>...<tool-use-id>...</tool-use-id>
+  //  ...<status>completed</status>...</task-notification>`.
+  // The block-based parser below only handles array content; without this
+  // early branch, background agents (subagents launched with run_in_background)
+  // never flip from "running" to "completed" in the HUD.
+  if (typeof content === 'string') {
+    if (
+      content.includes('<task-notification>')
+      || content.includes('<task_id>')
+      || content.includes('<task-id>')
+    ) {
+      const taskOutput = parseTaskOutputResult(content);
+      if (taskOutput && taskOutput.status === 'completed') {
+        // Prefer direct tool-use-id lookup; fall back to the agentId mapping
+        // recorded at launch time.
+        let toolUseId: string | undefined;
+        if (taskOutput.toolUseId) {
+          toolUseId = taskOutput.toolUseId;
+        } else if (backgroundAgentMap) {
+          toolUseId = backgroundAgentMap.get(taskOutput.taskId);
+        }
+        if (toolUseId) {
+          const agent = agentMap.get(toolUseId);
+          if (agent && agent.status === 'running') {
+            agent.status = 'completed';
+            agent.endTime = timestamp;
+          }
+        }
+      }
+    }
+    return;
+  }
+
   if (!content || !Array.isArray(content)) return;
 
   for (const block of content) {
@@ -292,7 +408,12 @@ function processEntry(
         startTime: timestamp,
       };
 
-      if (block.name === 'Task' || block.name === 'Agent') {
+      if (
+        block.name === 'Task'
+        || block.name === 'proxy_Task'
+        || block.name === 'Agent'
+        || block.name === 'proxy_Agent'
+      ) {
         const input = block.input as Record<string, unknown>;
         const agentEntry: AgentEntry = {
           id: block.id,
@@ -303,7 +424,7 @@ function processEntry(
           startTime: timestamp,
         };
         agentMap.set(block.id, agentEntry);
-      } else if (block.name === 'TodoWrite') {
+      } else if (block.name === 'TodoWrite' || block.name === 'proxy_TodoWrite') {
         const input = block.input as { todos?: TodoItem[] };
         if (input?.todos && Array.isArray(input.todos)) {
           // Build reverse map: content → taskIds from existing state
@@ -377,8 +498,51 @@ function processEntry(
 
       const agent = agentMap.get(block.tool_use_id);
       if (agent) {
-        agent.status = 'completed';
-        agent.endTime = timestamp;
+        const blockContent = block.content;
+
+        // Background-agent launch ACKs look like a tool_result whose text
+        // STARTS with "Async agent launched" — these are not completions,
+        // they just confirm the agent spawned in the background. A real
+        // completion report can easily quote the launch phrase elsewhere in
+        // its prose, so use `startsWith` on the trimmed text rather than
+        // `.includes()` to avoid misclassifying legitimate foreground
+        // completions.
+        if (isAsyncAgentLaunchResult(blockContent)) {
+          // Record the agentId -> tool_use_id mapping so we can resolve the
+          // matching <task-notification> completion later.
+          if (backgroundAgentMap && blockContent != null) {
+            const bgAgentId = extractBackgroundAgentId(blockContent);
+            if (bgAgentId) {
+              backgroundAgentMap.set(bgAgentId, block.tool_use_id);
+            }
+          }
+          // Keep status as 'running' — launch is not a completion.
+        } else {
+          // Foreground agent completion (synchronous Task tool_result).
+          agent.status = 'completed';
+          agent.endTime = timestamp;
+        }
+      }
+
+      // Foreground tool_results may also carry an inline <task-notification>
+      // completion block — handle that case for parity with OMC.
+      if (block.content != null) {
+        const taskOutput = parseTaskOutputResult(block.content);
+        if (taskOutput && taskOutput.status === 'completed') {
+          let toolUseId: string | undefined;
+          if (taskOutput.toolUseId) {
+            toolUseId = taskOutput.toolUseId;
+          } else if (backgroundAgentMap) {
+            toolUseId = backgroundAgentMap.get(taskOutput.taskId);
+          }
+          if (toolUseId) {
+            const bgAgent = agentMap.get(toolUseId);
+            if (bgAgent && bgAgent.status === 'running') {
+              bgAgent.status = 'completed';
+              bgAgent.endTime = timestamp;
+            }
+          }
+        }
       }
     }
   }
