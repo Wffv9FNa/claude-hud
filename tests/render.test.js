@@ -1908,3 +1908,114 @@ test('renderSessionLine includes compact session token summary when enabled', ()
   const line = stripAnsi(renderSessionLine(ctx));
   assert.ok(line.includes('tok: 2k (in: 2k, out: 250)'), 'should include compact token summary');
 });
+
+test('render expanded layout merges environment and tools when mergeEnvWithTools is enabled', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.elementOrder = ['environment', 'tools'];
+  ctx.config.display.showConfigCounts = true;
+  ctx.config.display.showTools = true;
+  ctx.config.display.mergeEnvWithTools = true;
+  ctx.claudeMdCount = 1;
+  ctx.mcpCount = 1;
+  ctx.hooksCount = 6;
+  ctx.transcript.tools = [
+    { id: 'r1', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0), duration: 0 },
+    { id: 'r2', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0), duration: 0 },
+    { id: 'b1', name: 'Bash', status: 'completed', startTime: new Date(0), endTime: new Date(0), duration: 0 },
+  ];
+
+  const lines = withTerminal(200, () => captureRenderLines(ctx));
+  const envIndex = lines.findIndex(line => line.includes('CLAUDE.md'));
+  const toolsIndex = lines.findIndex(line => line.includes('Read'));
+
+  assert.ok(envIndex >= 0, 'environment segment should render');
+  assert.ok(toolsIndex >= 0, 'tools segment should render');
+  assert.equal(envIndex, toolsIndex, 'environment and tools should share a single line');
+  const mergedLine = lines[envIndex];
+  assert.ok(mergedLine.includes('1 CLAUDE.md'), `merged line should include env counts: ${mergedLine}`);
+  assert.ok(mergedLine.includes('6 hooks'), `merged line should include hooks count: ${mergedLine}`);
+  assert.ok(mergedLine.includes('Bash'), `merged line should include tools: ${mergedLine}`);
+  assert.ok(mergedLine.includes(' | '), `merged line should use pipe separator: ${mergedLine}`);
+});
+
+test('render expanded layout keeps environment and tools separate by default', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.elementOrder = ['environment', 'tools'];
+  ctx.config.display.showConfigCounts = true;
+  ctx.config.display.showTools = true;
+  ctx.config.display.mergeEnvWithTools = false;
+  ctx.claudeMdCount = 1;
+  ctx.mcpCount = 1;
+  ctx.hooksCount = 6;
+  ctx.transcript.tools = [
+    { id: 'r1', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0), duration: 0 },
+  ];
+
+  const lines = withTerminal(200, () => captureRenderLines(ctx));
+  const envIndex = lines.findIndex(line => line.includes('CLAUDE.md'));
+  const toolsIndex = lines.findIndex(line => line.includes('Read'));
+
+  assert.ok(envIndex >= 0 && toolsIndex >= 0, 'both segments should render');
+  assert.notEqual(envIndex, toolsIndex, 'environment and tools should stay on separate lines by default');
+});
+
+test('render expanded layout falls back to two lines when merged env+tools exceeds terminal width', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.elementOrder = ['environment', 'tools'];
+  ctx.config.display.showConfigCounts = true;
+  ctx.config.display.showTools = true;
+  ctx.config.display.mergeEnvWithTools = true;
+  ctx.claudeMdCount = 1;
+  ctx.mcpCount = 1;
+  ctx.hooksCount = 6;
+  ctx.transcript.tools = [
+    { id: 'r1', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0), duration: 0 },
+    { id: 'b1', name: 'Bash', status: 'completed', startTime: new Date(0), endTime: new Date(0), duration: 0 },
+  ];
+
+  const lines = withTerminal(30, () => captureRenderLines(ctx));
+  const envLines = lines.filter(line => line.includes('CLAUDE.md') && !line.includes('Read'));
+  const toolsLines = lines.filter(line => line.includes('Read') && !line.includes('CLAUDE.md'));
+
+  assert.ok(envLines.length >= 1, `should render env on its own line when merged overflows: ${JSON.stringify(lines)}`);
+  assert.ok(toolsLines.length >= 1, `should render tools on its own line when merged overflows: ${JSON.stringify(lines)}`);
+});
+
+test('renderUsageLine shows weekly segment when alwaysShowWeekly is true and sevenDay is below threshold', () => {
+  const ctx = baseContext();
+  ctx.config.display.sevenDayThreshold = 80;
+  ctx.config.display.alwaysShowWeekly = true;
+  ctx.config.display.usageBarEnabled = false;
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 21,
+    sevenDay: 3,
+    fiveHourResetAt: new Date(Date.now() + 3 * 60 * 60 * 1000),
+    sevenDayResetAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
+  };
+
+  const line = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.ok(line.includes('Weekly'), `should include Weekly label: ${line}`);
+  assert.ok(line.includes('3%'), `should include weekly percentage: ${line}`);
+  assert.ok(line.includes('resets in'), `should include reset countdown: ${line}`);
+});
+
+test('renderUsageLine hides weekly when alwaysShowWeekly is false and sevenDay is below threshold', () => {
+  const ctx = baseContext();
+  ctx.config.display.sevenDayThreshold = 80;
+  ctx.config.display.alwaysShowWeekly = false;
+  ctx.config.display.usageBarEnabled = false;
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 21,
+    sevenDay: 3,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+
+  const line = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.ok(!line.includes('Weekly'), `should NOT include Weekly when below threshold and alwaysShowWeekly=false: ${line}`);
+});

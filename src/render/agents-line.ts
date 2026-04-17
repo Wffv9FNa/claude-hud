@@ -5,10 +5,13 @@ import { renderAgentsMultiLine } from './agents-multiline.js';
 const MAX_RECENT_COMPLETED = 2;
 const MAX_AGENTS_SHOWN = 3;
 
-export function renderAgentsLine(ctx: RenderContext): string | null {
+export function renderAgentsLine(
+  ctx: RenderContext,
+  terminalWidth: number | null = null
+): string | null {
   const format = ctx.config?.display?.agentsFormat ?? 'compact';
   if (format === 'multiline') {
-    return renderAgentsMultilineWrapped(ctx);
+    return renderAgentsMultilineWrapped(ctx, terminalWidth);
   }
   return renderAgentsCompact(ctx);
 }
@@ -42,7 +45,10 @@ function renderAgentsCompact(ctx: RenderContext): string | null {
   return lines.join('\n');
 }
 
-function renderAgentsMultilineWrapped(ctx: RenderContext): string | null {
+function renderAgentsMultilineWrapped(
+  ctx: RenderContext,
+  terminalWidth: number | null = null
+): string | null {
   const { agents } = ctx.transcript;
 
   const runningAgents = agents.filter((a) => a.status === 'running');
@@ -62,7 +68,7 @@ function renderAgentsMultilineWrapped(ctx: RenderContext): string | null {
   const maxLines = ctx.config?.display?.agentsMaxLines ?? 5;
   // renderAgentsMultiLine filters internally to status === 'running';
   // recentCompleted entries are silently dropped in multiline mode.
-  const { headerPart, detailLines } = renderAgentsMultiLine(inputAgents, maxLines);
+  const { headerPart, detailLines } = renderAgentsMultiLine(inputAgents, maxLines, terminalWidth);
 
   if (detailLines.length === 0) {
     return null;

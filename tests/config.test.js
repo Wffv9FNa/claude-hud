@@ -54,7 +54,9 @@ test('loadConfig returns valid config structure', async () => {
   assert.equal(typeof config.display.showSpeed, 'boolean');
   assert.equal(typeof config.display.showTokenBreakdown, 'boolean');
   assert.equal(typeof config.display.showUsage, 'boolean');
+  assert.equal(typeof config.display.alwaysShowWeekly, 'boolean');
   assert.equal(typeof config.display.showTools, 'boolean');
+  assert.equal(typeof config.display.mergeEnvWithTools, 'boolean');
   assert.equal(typeof config.display.showAgents, 'boolean');
   assert.equal(typeof config.display.showTodos, 'boolean');
   assert.equal(typeof config.display.showSessionName, 'boolean');
@@ -534,4 +536,28 @@ test('mergeConfig falls back to default agentsMaxLines for non-numeric input', (
     mergeConfig({ display: { agentsMaxLines: 'seven' } }).display.agentsMaxLines,
     5
   );
+});
+
+test('mergeConfig defaults alwaysShowWeekly and mergeEnvWithTools to false', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.alwaysShowWeekly, false);
+  assert.equal(config.display.mergeEnvWithTools, false);
+  assert.equal(DEFAULT_CONFIG.display.alwaysShowWeekly, false);
+  assert.equal(DEFAULT_CONFIG.display.mergeEnvWithTools, false);
+});
+
+test('mergeConfig accepts explicit alwaysShowWeekly and mergeEnvWithTools true', () => {
+  const config = mergeConfig({
+    display: { alwaysShowWeekly: true, mergeEnvWithTools: true },
+  });
+  assert.equal(config.display.alwaysShowWeekly, true);
+  assert.equal(config.display.mergeEnvWithTools, true);
+});
+
+test('mergeConfig rejects non-boolean values for alwaysShowWeekly and mergeEnvWithTools', () => {
+  const config = mergeConfig({
+    display: { alwaysShowWeekly: 'yes', mergeEnvWithTools: 1 },
+  });
+  assert.equal(config.display.alwaysShowWeekly, false);
+  assert.equal(config.display.mergeEnvWithTools, false);
 });

@@ -181,8 +181,10 @@ Chinese HUD labels are available as an explicit opt-in. English stays the defaul
 | `display.showUsage` | boolean | true | Show Claude subscriber usage limits when available |
 | `display.usageBarEnabled` | boolean | true | Display usage as visual bar instead of text |
 | `display.sevenDayThreshold` | 0-100 | 80 | Show 7-day usage when >= threshold (0 = always) |
+| `display.alwaysShowWeekly` | boolean | false | Force the weekly usage segment to always render, regardless of `sevenDayThreshold`. The `Weekly` label is always shown in this mode. |
 | `display.showTokenBreakdown` | boolean | true | Show token details at high context (85%+) |
 | `display.showTools` | boolean | false | Show tools activity line |
+| `display.mergeEnvWithTools` | boolean | false | Collapse adjacent `environment` and `tools` elements onto a single line joined with ` \| `. Falls back to two lines when the combined width exceeds the terminal. |
 | `display.showAgents` | boolean | false | Show agents activity line |
 | `display.agentsFormat` | `compact` \| `multiline` | `compact` | Agent line style. `compact` shows one line per agent (default). `multiline` shows a tree block (`├─` / `└─`) with padded columns and colour-escalated durations. |
 | `display.agentsMaxLines` | 1-20 | 5 | Cap on agent detail rows in `multiline` mode. Overflow becomes `+N more agents...`. |

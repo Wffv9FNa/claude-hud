@@ -2,14 +2,33 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
-## [Unreleased]
+## [0.0.13] - 2026-04-17
 
 ### Added
+- `display.alwaysShowWeekly` (default `false`). When `true`, the weekly usage
+  segment is appended to the context+usage line regardless of
+  `display.sevenDayThreshold`. The `Weekly` label is always shown in this mode.
+- `display.mergeEnvWithTools` (default `false`). When `true`, the `environment`
+  and `tools` elements are collapsed into a single line joined with ` | `,
+  producing output such as `1 CLAUDE.md | 1 MCPs | 6 hooks | . Read x5`.
+  Falls back to two lines when the combined width exceeds the terminal.
 - `display.agentsFormat` config option with values `compact` (default) and `multiline`.
   Multiline mode renders agents as a tree block with padded columns, model-tier colouring,
   CJK-aware description truncation, and duration-based colour escalation. Ported from
   oh-my-claudecode's HUD agent element.
 - `display.agentsMaxLines` (default 5, range 1-20) to cap detail rows in multiline mode.
+
+### Fixed
+- Multi-line agent descriptions (`display.agentsFormat: multiline`) now expand to
+  use the available terminal width instead of a fixed 45-column cap. The
+  description budget is computed as `max(20, terminalWidth - 24)` whenever
+  `terminalWidth >= 60`, and falls back to the original 45-char default when
+  the terminal width is unknown or narrower.
+
+### Notes
+- Both new boolean flags are opt-in; existing users see unchanged output.
+- Neither flag is exposed in `/claude-hud:configure` yet; edit `config.json`
+  directly. A follow-up patch can wire the configure skill.
 
 ## [0.0.12] - 2026-04-04
 

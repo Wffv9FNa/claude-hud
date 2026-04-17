@@ -254,7 +254,7 @@ function makeSeparator(length) {
     return dim('─'.repeat(Math.max(length, 1)));
 }
 const ACTIVITY_ELEMENTS = new Set(['tools', 'agents', 'todos']);
-function collectActivityLines(ctx) {
+function collectActivityLines(ctx, terminalWidth = null) {
     const activityLines = [];
     const display = ctx.config?.display;
     if (display?.showTools !== false) {
@@ -264,7 +264,7 @@ function collectActivityLines(ctx) {
         }
     }
     if (display?.showAgents !== false) {
-        const agentsLine = renderAgentsLine(ctx);
+        const agentsLine = renderAgentsLine(ctx, terminalWidth);
         if (agentsLine) {
             activityLines.push(agentsLine);
         }
@@ -277,7 +277,7 @@ function collectActivityLines(ctx) {
     }
     return activityLines;
 }
-function renderElementLine(ctx, element) {
+function renderElementLine(ctx, element, terminalWidth = null) {
     const display = ctx.config?.display;
     switch (element) {
         case 'project':
@@ -293,7 +293,7 @@ function renderElementLine(ctx, element) {
         case 'tools':
             return display?.showTools === false ? null : renderToolsLine(ctx);
         case 'agents':
-            return display?.showAgents === false ? null : renderAgentsLine(ctx);
+            return display?.showAgents === false ? null : renderAgentsLine(ctx, terminalWidth);
         case 'todos':
             return display?.showTodos === false ? null : renderTodosLine(ctx);
     }
@@ -310,6 +310,7 @@ function renderExpanded(ctx, terminalWidth = null) {
     const elementOrder = ctx.config?.elementOrder ?? DEFAULT_ELEMENT_ORDER;
     const seen = new Set();
     const lines = [];
+    const mergeEnvWithTools = ctx.config?.display?.mergeEnvWithTools === true;
     for (let index = 0; index < elementOrder.length; index += 1) {
         const element = elementOrder[index];
         if (seen.has(element)) {
@@ -320,8 +321,8 @@ function renderExpanded(ctx, terminalWidth = null) {
             || (element === 'usage' && nextElement === 'context' && !seen.has('context'))) {
             seen.add(element);
             seen.add(nextElement);
-            const firstLine = renderElementLine(ctx, element);
-            const secondLine = renderElementLine(ctx, nextElement);
+            const firstLine = renderElementLine(ctx, element, terminalWidth);
+            const secondLine = renderElementLine(ctx, nextElement, terminalWidth);
             if (firstLine && secondLine) {
                 const combinedLine = `${firstLine} │ ${secondLine}`;
                 const canCombine = !terminalWidth || visualLength(combinedLine) <= terminalWidth;
@@ -341,8 +342,34 @@ function renderExpanded(ctx, terminalWidth = null) {
             }
             continue;
         }
+        if (mergeEnvWithTools
+            && ((element === 'environment' && nextElement === 'tools' && !seen.has('tools'))
+                || (element === 'tools' && nextElement === 'environment' && !seen.has('environment')))) {
+            seen.add(element);
+            seen.add(nextElement);
+            const firstLine = renderElementLine(ctx, element, terminalWidth);
+            const secondLine = renderElementLine(ctx, nextElement, terminalWidth);
+            if (firstLine && secondLine) {
+                const combinedLine = `${firstLine} | ${secondLine}`;
+                const canCombine = !terminalWidth || visualLength(combinedLine) <= terminalWidth;
+                if (canCombine) {
+                    lines.push({ line: combinedLine, isActivity: true });
+                }
+                else {
+                    lines.push({ line: firstLine, isActivity: ACTIVITY_ELEMENTS.has(element) });
+                    lines.push({ line: secondLine, isActivity: ACTIVITY_ELEMENTS.has(nextElement) });
+                }
+            }
+            else if (firstLine) {
+                lines.push({ line: firstLine, isActivity: ACTIVITY_ELEMENTS.has(element) });
+            }
+            else if (secondLine) {
+                lines.push({ line: secondLine, isActivity: ACTIVITY_ELEMENTS.has(nextElement) });
+            }
+            continue;
+        }
         seen.add(element);
-        const line = renderElementLine(ctx, element);
+        const line = renderElementLine(ctx, element, terminalWidth);
         if (!line) {
             continue;
         }
@@ -388,7 +415,7 @@ export function render(ctx) {
     }
     else {
         const headerLines = renderCompact(ctx);
-        const activityLines = collectActivityLines(ctx);
+        const activityLines = collectActivityLines(ctx, terminalWidth);
         lines = [...headerLines];
         if (showSeparators && activityLines.length > 0) {
             const maxWidth = Math.max(...headerLines.map(visualLength), 20);

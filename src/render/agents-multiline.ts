@@ -19,6 +19,12 @@ export interface MultiLineAgentsResult {
 const CYAN = '\x1b[36m';
 const DEFAULT_MAX_DESC_WIDTH = 45;
 
+// Width budget for the description column when a terminal width is known.
+// See .local/plans/claude-hud-layout-patch.md section 2.7 for rationale.
+const WIDTH_FLOOR = 60;
+const FIXED_OVERHEAD = 24;
+const MIN_DESC_WIDTH = 20;
+
 const ABBREVS: Record<string, string> = {
   'general-purpose': 'general',
   'statusline-setup': 'setup',
@@ -61,7 +67,8 @@ function sortByFreshest(agents: AgentEntry[]): AgentEntry[] {
 
 export function renderAgentsMultiLine(
   agents: AgentEntry[],
-  maxLines = 5
+  maxLines = 5,
+  terminalWidth: number | null = null
 ): MultiLineAgentsResult {
   const filtered = agents.filter((a) => a.status === 'running');
   if (filtered.length === 0) {
@@ -74,6 +81,10 @@ export function renderAgentsMultiLine(
   const now = Date.now();
   const detailLines: string[] = [];
 
+  const maxDescWidth = (terminalWidth != null && terminalWidth >= WIDTH_FLOOR)
+    ? Math.max(MIN_DESC_WIDTH, terminalWidth - FIXED_OVERHEAD)
+    : DEFAULT_MAX_DESC_WIDTH;
+
   running.slice(0, maxLines).forEach((agent, index) => {
     const isLast = index === displayCount - 1 && running.length <= maxLines;
     const prefix = isLast ? '└─' : '├─';
@@ -84,7 +95,7 @@ export function renderAgentsMultiLine(
     const duration = formatDurationPadded(durationMs);
     const durationColor = getDurationColor(durationMs);
     const desc = agent.description || '...';
-    const truncatedDesc = truncateToWidth(desc, DEFAULT_MAX_DESC_WIDTH);
+    const truncatedDesc = truncateToWidth(desc, maxDescWidth);
 
     detailLines.push(
       `${dim(prefix)} ${color}${code}${RESET} ${dim(shortName)}${durationColor}${duration}${RESET}  ${truncatedDesc}`

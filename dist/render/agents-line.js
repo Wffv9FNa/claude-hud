@@ -2,10 +2,10 @@ import { yellow, green, magenta, label } from './colors.js';
 import { renderAgentsMultiLine } from './agents-multiline.js';
 const MAX_RECENT_COMPLETED = 2;
 const MAX_AGENTS_SHOWN = 3;
-export function renderAgentsLine(ctx) {
+export function renderAgentsLine(ctx, terminalWidth = null) {
     const format = ctx.config?.display?.agentsFormat ?? 'compact';
     if (format === 'multiline') {
-        return renderAgentsMultilineWrapped(ctx);
+        return renderAgentsMultilineWrapped(ctx, terminalWidth);
     }
     return renderAgentsCompact(ctx);
 }
@@ -34,7 +34,7 @@ function renderAgentsCompact(ctx) {
     }
     return lines.join('\n');
 }
-function renderAgentsMultilineWrapped(ctx) {
+function renderAgentsMultilineWrapped(ctx, terminalWidth = null) {
     const { agents } = ctx.transcript;
     const runningAgents = agents.filter((a) => a.status === 'running');
     const recentCompleted = agents
@@ -52,7 +52,7 @@ function renderAgentsMultilineWrapped(ctx) {
     const maxLines = ctx.config?.display?.agentsMaxLines ?? 5;
     // renderAgentsMultiLine filters internally to status === 'running';
     // recentCompleted entries are silently dropped in multiline mode.
-    const { headerPart, detailLines } = renderAgentsMultiLine(inputAgents, maxLines);
+    const { headerPart, detailLines } = renderAgentsMultiLine(inputAgents, maxLines, terminalWidth);
     if (detailLines.length === 0) {
         return null;
     }

@@ -60,7 +60,9 @@ export interface HudConfig {
         showTokenBreakdown: boolean;
         showUsage: boolean;
         usageBarEnabled: boolean;
+        alwaysShowWeekly: boolean;
         showTools: boolean;
+        mergeEnvWithTools: boolean;
         showAgents: boolean;
         agentsFormat: AgentsFormat;
         agentsMaxLines: number;

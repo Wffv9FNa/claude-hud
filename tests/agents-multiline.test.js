@@ -236,3 +236,46 @@ test('formatDurationPadded matches OMC contract', () => {
   assert.equal(formatDurationPadded(180_000), '  3m');
   assert.equal(formatDurationPadded(660_000), ' 11m');
 });
+
+test('multiline: uses wider description budget when terminalWidth is provided', () => {
+  const now = 1_000_000;
+  withFixedNow(now, () => {
+    const longDesc = 'Plan fork patch for HUD layout across every relevant file'; // 58 chars
+    const agent = makeAgent('explore', 'haiku', now - 45_000, longDesc);
+    const { detailLines } = renderAgentsMultiLine([agent], 5, 180);
+    const stripped = stripAnsi(detailLines[0]);
+    assert.ok(stripped.includes(longDesc), `wide terminal should render full description: ${stripped}`);
+    assert.ok(!stripped.includes('...'), `wide terminal should not truncate: ${stripped}`);
+    assert.ok(stripped.length <= 180, `rendered line visual length must fit within 180: ${stripped.length}`);
+  });
+});
+
+test('multiline: falls back to 45-char default when terminalWidth is null or undefined', () => {
+  const now = 1_000_000;
+  withFixedNow(now, () => {
+    const longDesc = 'a'.repeat(80);
+    const agent = makeAgent('explore', 'haiku', now - 45_000, longDesc);
+
+    const nullWidth = stripAnsi(renderAgentsMultiLine([agent], 5, null).detailLines[0]);
+    const undefWidth = stripAnsi(renderAgentsMultiLine([agent], 5).detailLines[0]);
+
+    assert.ok(nullWidth.includes('...'), `null width should truncate: ${nullWidth}`);
+    assert.ok(undefWidth.includes('...'), `undefined width should truncate: ${undefWidth}`);
+
+    const truncatedPart = nullWidth.split('  ').pop(); // last column after the two-space gap
+    assert.equal(truncatedPart.length, 45, `truncated description should be exactly 45 chars: "${truncatedPart}"`);
+  });
+});
+
+test('multiline: falls back to 45-char default when terminalWidth is below floor (60)', () => {
+  const now = 1_000_000;
+  withFixedNow(now, () => {
+    const longDesc = 'a'.repeat(80);
+    const agent = makeAgent('explore', 'haiku', now - 45_000, longDesc);
+
+    const narrowLine = stripAnsi(renderAgentsMultiLine([agent], 5, 50).detailLines[0]);
+    const nullLine = stripAnsi(renderAgentsMultiLine([agent], 5, null).detailLines[0]);
+
+    assert.equal(narrowLine, nullLine, 'below-floor width should render identically to null');
+  });
+});

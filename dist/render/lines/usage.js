@@ -52,7 +52,10 @@ export function renderUsageLine(ctx) {
         usageBarEnabled,
         barWidth,
     });
-    if (sevenDay !== null && sevenDay >= sevenDayThreshold) {
+    const alwaysShowWeekly = display?.alwaysShowWeekly === true;
+    const showWeekly = sevenDay !== null
+        && (sevenDay >= sevenDayThreshold || alwaysShowWeekly);
+    if (showWeekly) {
         const sevenDayPart = formatUsageWindowPart({
             label: t("label.weekly"),
             percent: sevenDay,

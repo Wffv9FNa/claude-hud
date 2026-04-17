@@ -90,7 +90,9 @@ export interface HudConfig {
     showTokenBreakdown: boolean;
     showUsage: boolean;
     usageBarEnabled: boolean;
+    alwaysShowWeekly: boolean;
     showTools: boolean;
+    mergeEnvWithTools: boolean;
     showAgents: boolean;
     agentsFormat: AgentsFormat;
     agentsMaxLines: number;
@@ -137,7 +139,9 @@ export const DEFAULT_CONFIG: HudConfig = {
     showTokenBreakdown: true,
     showUsage: true,
     usageBarEnabled: true,
+    alwaysShowWeekly: false,
     showTools: false,
+    mergeEnvWithTools: false,
     showAgents: false,
     agentsFormat: 'compact',
     agentsMaxLines: 5,
@@ -368,9 +372,15 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     usageBarEnabled: typeof migrated.display?.usageBarEnabled === 'boolean'
       ? migrated.display.usageBarEnabled
       : DEFAULT_CONFIG.display.usageBarEnabled,
+    alwaysShowWeekly: typeof migrated.display?.alwaysShowWeekly === 'boolean'
+      ? migrated.display.alwaysShowWeekly
+      : DEFAULT_CONFIG.display.alwaysShowWeekly,
     showTools: typeof migrated.display?.showTools === 'boolean'
       ? migrated.display.showTools
       : DEFAULT_CONFIG.display.showTools,
+    mergeEnvWithTools: typeof migrated.display?.mergeEnvWithTools === 'boolean'
+      ? migrated.display.mergeEnvWithTools
+      : DEFAULT_CONFIG.display.mergeEnvWithTools,
     showAgents: typeof migrated.display?.showAgents === 'boolean'
       ? migrated.display.showAgents
       : DEFAULT_CONFIG.display.showAgents,
