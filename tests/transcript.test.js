@@ -381,6 +381,98 @@ describe('parseTranscript: background-agent tracking', () => {
     }
   });
 
+  test('top-level queue-operation task-notification flips background agent to completed', async () => {
+    const entries = [
+      {
+        timestamp: '2024-01-01T00:00:00.000Z',
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_X',
+              name: 'Agent',
+              input: { subagent_type: 'general-purpose', description: 'bg task' },
+            },
+          ],
+        },
+      },
+      {
+        timestamp: '2024-01-01T00:00:01.000Z',
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_X',
+              content: 'Async agent launched successfully.\nagentId: abc123\nrunning',
+            },
+          ],
+        },
+      },
+      {
+        type: 'queue-operation',
+        operation: 'enqueue',
+        timestamp: '2024-01-01T00:00:30.000Z',
+        sessionId: 'sess-1',
+        content:
+          '<task-notification><task-id>abc123</task-id><tool-use-id>toolu_X</tool-use-id><status>completed</status></task-notification>',
+      },
+    ];
+
+    const { dir, filePath } = await writeTranscript(entries);
+    try {
+      const result = await parseTranscript(filePath);
+      assert.equal(result.agents.length, 1);
+      assert.equal(result.agents[0].status, 'completed');
+      assert.ok(result.agents[0].endTime instanceof Date);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('without queue-operation record, background agent stays running', async () => {
+    const entries = [
+      {
+        timestamp: '2024-01-01T00:00:00.000Z',
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_X',
+              name: 'Agent',
+              input: { subagent_type: 'general-purpose', description: 'bg task' },
+            },
+          ],
+        },
+      },
+      {
+        timestamp: '2024-01-01T00:00:01.000Z',
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_X',
+              content: 'Async agent launched successfully.\nagentId: abc123\nrunning',
+            },
+          ],
+        },
+      },
+    ];
+
+    const { dir, filePath } = await writeTranscript(entries);
+    try {
+      const result = await parseTranscript(filePath);
+      assert.equal(result.agents.length, 1);
+      assert.equal(result.agents[0].status, 'running');
+      assert.equal(result.agents[0].endTime, undefined);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test('proxy_TodoWrite replaces latest todos', async () => {
     const entries = [
       {

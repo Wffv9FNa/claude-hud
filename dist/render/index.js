@@ -3,6 +3,7 @@ import { renderSessionLine } from './session-line.js';
 import { renderToolsLine } from './tools-line.js';
 import { renderAgentsLine } from './agents-line.js';
 import { renderTodosLine } from './todos-line.js';
+import { renderColumns } from './columns.js';
 import { renderIdentityLine, renderProjectLine, renderGitFilesLine, renderEnvironmentLine, renderUsageLine, renderMemoryLine, renderSessionTokensLine, } from './lines/index.js';
 import { dim, RESET } from './colors.js';
 import { UNKNOWN_TERMINAL_WIDTH, detectTerminalColumns } from '../utils/terminal.js';
@@ -297,6 +298,10 @@ function renderExpanded(ctx, terminalWidth = null) {
     const seen = new Set();
     const lines = [];
     const mergeEnvWithTools = ctx.config?.display?.mergeEnvWithTools === true;
+    const columnsEnabled = ctx.config?.display?.columns === true;
+    const columnsMinWidth = ctx.config?.display?.columnsMinWidth ?? 100;
+    const showAgents = ctx.config?.display?.showAgents !== false;
+    const showTodos = ctx.config?.display?.showTodos !== false;
     for (let index = 0; index < elementOrder.length; index += 1) {
         const element = elementOrder[index];
         if (seen.has(element)) {
@@ -325,6 +330,38 @@ function renderExpanded(ctx, terminalWidth = null) {
             }
             else if (secondLine) {
                 lines.push({ line: secondLine, isActivity: false });
+            }
+            continue;
+        }
+        if (columnsEnabled
+            && showAgents
+            && showTodos
+            && terminalWidth !== null
+            && terminalWidth >= columnsMinWidth
+            && ((element === 'agents' && nextElement === 'todos' && !seen.has('todos'))
+                || (element === 'todos' && nextElement === 'agents' && !seen.has('agents')))) {
+            seen.add(element);
+            seen.add(nextElement);
+            const separatorWidth = 3; // visualLength(' │ ')
+            const totalBudget = terminalWidth - separatorWidth;
+            const leftColumnWidth = Math.floor(totalBudget / 2);
+            // rightColumnWidth = totalBudget - leftColumnWidth (unused locally;
+            // renderColumns computes column widths itself from terminalWidth)
+            // Pass COLUMN width (not terminalWidth) to renderAgentsLine so
+            // multiline agent rows size descriptions to the column budget.
+            const agentsOut = showAgents ? renderAgentsLine(ctx, leftColumnWidth) : null;
+            const todosOut = showTodos ? renderTodosLine(ctx) : null;
+            if (agentsOut && todosOut) {
+                const leftContent = element === 'agents' ? agentsOut : todosOut;
+                const rightContent = element === 'agents' ? todosOut : agentsOut;
+                const combined = renderColumns(leftContent, rightContent, terminalWidth);
+                lines.push({ line: combined, isActivity: true });
+            }
+            else if (agentsOut) {
+                lines.push({ line: agentsOut, isActivity: true });
+            }
+            else if (todosOut) {
+                lines.push({ line: todosOut, isActivity: true });
             }
             continue;
         }

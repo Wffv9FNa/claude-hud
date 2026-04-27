@@ -929,6 +929,59 @@ test('renderAgentsLine formats elapsed time in hours for long-running agents', (
   assert.ok(line?.includes('2h 5m'));
 });
 
+test('renderAgentsLine multiline shows all running agents even with completed agents present', () => {
+  const ctx = baseContext();
+  ctx.config.display.agentsFormat = 'multiline';
+  const originalNow = Date.now;
+  Date.now = () => 100_000;
+  try {
+    ctx.transcript.agents = [
+      {
+        id: 'run-1',
+        type: 'explore',
+        model: 'haiku',
+        description: 'scanning files A',
+        status: 'running',
+        startTime: new Date(95_000),
+      },
+      {
+        id: 'run-2',
+        type: 'architect',
+        model: 'opus',
+        description: 'planning design B',
+        status: 'running',
+        startTime: new Date(90_000),
+      },
+      {
+        id: 'done-1',
+        type: 'executor',
+        model: 'sonnet',
+        description: 'finished task C',
+        status: 'completed',
+        startTime: new Date(50_000),
+        endTime: new Date(60_000),
+      },
+      {
+        id: 'done-2',
+        type: 'planner',
+        model: 'haiku',
+        description: 'finished task D',
+        status: 'completed',
+        startTime: new Date(40_000),
+        endTime: new Date(55_000),
+      },
+    ];
+
+    const line = renderAgentsLine(ctx);
+    const stripped = stripAnsi(line ?? '');
+    assert.ok(stripped.includes('agents:2'), `expected 'agents:2' in header, got: ${stripped}`);
+    assert.ok(stripped.includes('scanning files A'), `expected first running agent description: ${stripped}`);
+    assert.ok(stripped.includes('planning design B'), `expected second running agent description: ${stripped}`);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
 test('renderAgentsLine clamps negative elapsed time to under one second', () => {
   const ctx = baseContext();
   ctx.transcript.agents = [
@@ -2019,3 +2072,92 @@ test('renderUsageLine hides weekly when alwaysShowWeekly is false and sevenDay i
   const line = stripAnsi(renderUsageLine(ctx) ?? '');
   assert.ok(!line.includes('Weekly'), `should NOT include Weekly when below threshold and alwaysShowWeekly=false: ${line}`);
 });
+
+// --- columns layout integration tests ---
+
+function columnsCtx({ columns = true, todosFormat = 'checklist' } = {}) {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.display.columns = columns;
+  ctx.config.display.todosFormat = todosFormat;
+  ctx.config.display.columnsMinWidth = 100;
+  ctx.config.display.agentsFormat = 'multiline';
+  ctx.config.display.showContextBar = false;
+  ctx.config.display.showUsage = false;
+  ctx.config.display.showConfigCounts = false;
+  ctx.config.display.showTools = false;
+  ctx.config.display.showProject = false;
+  ctx.config.elementOrder = ['agents', 'todos'];
+  ctx.stdin.context_window.current_usage.input_tokens = 0;
+  ctx.transcript.agents = [
+    { id: 'a1', type: 'explore', model: 'haiku', description: 'inspect code', status: 'running', startTime: new Date(Date.now() - 5000) },
+    { id: 'a2', type: 'architect', model: 'opus', description: 'plan layout', status: 'running', startTime: new Date(Date.now() - 30000) },
+  ];
+  ctx.transcript.todos = [
+    { content: 'design api', status: 'completed' },
+    { content: 'implement render', status: 'in_progress' },
+    { content: 'write docs', status: 'pending' },
+  ];
+  return ctx;
+}
+
+test('render: columns=true at width 120 produces combined rows with " \u2502 " separator', () => {
+  const ctx = columnsCtx({ columns: true });
+  let lines = [];
+  withTerminal(120, () => { lines = captureRenderLines(ctx); });
+  const SEP = ' \u2502 ';
+  const combinedRows = lines.filter((l) => l.includes(SEP));
+  assert.ok(combinedRows.length >= 2, `expected combined column rows (separator ${JSON.stringify(SEP)}) in output: ${JSON.stringify(lines)}`);
+  // Agents content on the left side of the separator, todos content on the right.
+  const anyWithAgents = combinedRows.some((row) => {
+    const leftHalf = row.split(SEP)[0];
+    return leftHalf.includes('explore') || leftHalf.includes('architect') || leftHalf.includes('agents');
+  });
+  const anyWithTodos = combinedRows.some((row) => {
+    const rightHalf = row.split(SEP).slice(1).join(SEP);
+    return rightHalf.includes('design api') || rightHalf.includes('implement render') || rightHalf.includes('write docs');
+  });
+  assert.ok(anyWithAgents, `agents content should appear on left of separator: ${JSON.stringify(combinedRows)}`);
+  assert.ok(anyWithTodos, `todos content should appear on right of separator: ${JSON.stringify(combinedRows)}`);
+});
+
+test('render: columns=true at width 80 falls back to stacked layout', () => {
+  const ctx = columnsCtx({ columns: true });
+  let lines = [];
+  withTerminal(80, () => { lines = captureRenderLines(ctx); });
+  const SEP = ' \u2502 ';
+  // Exclude single-char " | " separator cases. Column layout would place
+  // agent AND todo content on the same line; stacked layout keeps them apart.
+  for (const line of lines) {
+    if (!line.includes(SEP)) continue;
+    const leftHalf = line.split(SEP)[0];
+    const rightHalf = line.split(SEP).slice(1).join(SEP);
+    const leftHasAgents = leftHalf.includes('explore') || leftHalf.includes('architect');
+    const rightHasTodos = rightHalf.includes('design api') || rightHalf.includes('implement') || rightHalf.includes('write docs');
+    assert.ok(
+      !(leftHasAgents && rightHasTodos),
+      `below columnsMinWidth, agents+todos should not appear as aligned columns on the same row: ${line}`
+    );
+  }
+});
+
+test('render: columns=false produces byte-identical output to baseline (no columns)', () => {
+  const baselineCtx = columnsCtx({ columns: false });
+  const withFlagCtx = columnsCtx({ columns: false });
+  let baselineLines = [];
+  let flagLines = [];
+  withTerminal(120, () => { baselineLines = captureRenderLines(baselineCtx); });
+  withTerminal(120, () => { flagLines = captureRenderLines(withFlagCtx); });
+  assert.deepEqual(flagLines, baselineLines, 'columns=false must be byte-identical to baseline');
+  // And no combined-row separator should appear (agents and todos stacked).
+  const SEP = ' \u2502 ';
+  for (const line of baselineLines) {
+    if (!line.includes(SEP)) continue;
+    const leftHalf = line.split(SEP)[0];
+    const rightHalf = line.split(SEP).slice(1).join(SEP);
+    const both = (leftHalf.includes('architect') || leftHalf.includes('explore')) &&
+      (rightHalf.includes('design api') || rightHalf.includes('implement') || rightHalf.includes('write docs'));
+    assert.ok(!both, 'columns=false must not emit agents/todos side-by-side');
+  }
+});
+

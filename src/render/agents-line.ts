@@ -51,24 +51,11 @@ function renderAgentsMultilineWrapped(
 ): string | null {
   const { agents } = ctx.transcript;
 
-  const runningAgents = agents.filter((a) => a.status === 'running');
-  const recentCompleted = agents
-    .filter((a) => a.status === 'completed')
-    .slice(-MAX_RECENT_COMPLETED);
-
-  const seen = new Set<string>();
-  const inputAgents = [...runningAgents, ...recentCompleted]
-    .filter((a) => {
-      if (seen.has(a.id)) return false;
-      seen.add(a.id);
-      return true;
-    })
-    .slice(-MAX_AGENTS_SHOWN);
-
   const maxLines = ctx.config?.display?.agentsMaxLines ?? 5;
-  // renderAgentsMultiLine filters internally to status === 'running';
-  // recentCompleted entries are silently dropped in multiline mode.
-  const { headerPart, detailLines } = renderAgentsMultiLine(inputAgents, maxLines, terminalWidth);
+  // Multiline mode shows only running agents; renderAgentsMultiLine filters
+  // internally to status === 'running' and caps detail rows by `maxLines`.
+  // Pass all agents through so the header reports the true running count.
+  const { headerPart, detailLines } = renderAgentsMultiLine(agents, maxLines, terminalWidth);
 
   if (detailLines.length === 0) {
     return null;

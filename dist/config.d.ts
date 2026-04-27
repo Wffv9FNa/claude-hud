@@ -16,6 +16,12 @@ export type ModelFormatMode = 'full' | 'compact' | 'short';
  *   multiline - Tree-style per agent: ├─ e explore  45s  searching for test files
  */
 export type AgentsFormat = 'compact' | 'multiline';
+/**
+ * Todos display format:
+ *   line      - Single-line summary (existing behaviour)
+ *   checklist - Multi-line: last-completed + active + next-pending
+ */
+export type TodosFormat = 'line' | 'checklist';
 export type HudElement = 'project' | 'context' | 'usage' | 'memory' | 'environment' | 'tools' | 'agents' | 'todos';
 export type HudColorName = 'dim' | 'red' | 'green' | 'yellow' | 'magenta' | 'cyan' | 'brightBlue' | 'brightMagenta';
 /** A color value: named preset, 256-color index (0-255), or hex string (#rrggbb). */
@@ -67,6 +73,25 @@ export interface HudConfig {
         agentsFormat: AgentsFormat;
         agentsMaxLines: number;
         showTodos: boolean;
+        /**
+         * When true (and terminal is wide enough), render `agents` and `todos`
+         * as side-by-side columns separated by ` │ `. Falls back to stacked
+         * layout when `terminalWidth < columnsMinWidth` or either column empty.
+         */
+        columns: boolean;
+        /** Todos rendering mode: `line` (single-line summary) or `checklist` (multi-line). */
+        todosFormat: TodosFormat;
+        /**
+         * Minimum terminal width (in columns) required to activate the
+         * side-by-side `columns` layout. Clamped to [60, 500].
+         *
+         * Default `100` leaves ~48 chars per column after the ` │ ` separator
+         * ((100 - 3) / 2 = 48). The agents-multiline renderer consumes ~24
+         * chars of overhead per row (icon + shortName(12) + duration(4) +
+         * spacing), leaving ~24 chars for the description at the minimum --
+         * tight but acceptable. Bump to `120` for roomier descriptions.
+         */
+        columnsMinWidth: number;
         showSessionName: boolean;
         showClaudeCodeVersion: boolean;
         showMemoryUsage: boolean;

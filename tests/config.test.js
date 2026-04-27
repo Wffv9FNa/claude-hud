@@ -561,3 +561,73 @@ test('mergeConfig rejects non-boolean values for alwaysShowWeekly and mergeEnvWi
   assert.equal(config.display.alwaysShowWeekly, false);
   assert.equal(config.display.mergeEnvWithTools, false);
 });
+
+// --- columns / todosFormat / columnsMinWidth tests ---
+
+test('mergeConfig defaults columns to false', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.columns, false);
+  assert.equal(DEFAULT_CONFIG.display.columns, false);
+});
+
+test('mergeConfig preserves explicit columns=true', () => {
+  const config = mergeConfig({ display: { columns: true } });
+  assert.equal(config.display.columns, true);
+});
+
+test('mergeConfig rejects non-boolean columns and falls back to default', () => {
+  assert.equal(mergeConfig({ display: { columns: 'yes' } }).display.columns, false);
+  assert.equal(mergeConfig({ display: { columns: 1 } }).display.columns, false);
+  assert.equal(mergeConfig({ display: { columns: null } }).display.columns, false);
+});
+
+test('mergeConfig defaults todosFormat to line', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.todosFormat, 'line');
+  assert.equal(DEFAULT_CONFIG.display.todosFormat, 'line');
+});
+
+test('mergeConfig preserves valid todosFormat values', () => {
+  assert.equal(mergeConfig({ display: { todosFormat: 'line' } }).display.todosFormat, 'line');
+  assert.equal(mergeConfig({ display: { todosFormat: 'checklist' } }).display.todosFormat, 'checklist');
+});
+
+test('mergeConfig falls back to line for invalid todosFormat', () => {
+  assert.equal(mergeConfig({ display: { todosFormat: 'bogus' } }).display.todosFormat, 'line');
+  assert.equal(mergeConfig({ display: { todosFormat: 123 } }).display.todosFormat, 'line');
+  assert.equal(mergeConfig({ display: { todosFormat: null } }).display.todosFormat, 'line');
+});
+
+test('mergeConfig defaults columnsMinWidth to 100', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.columnsMinWidth, 100);
+  assert.equal(DEFAULT_CONFIG.display.columnsMinWidth, 100);
+});
+
+test('mergeConfig clamps columnsMinWidth below 60 up to 60', () => {
+  assert.equal(mergeConfig({ display: { columnsMinWidth: 10 } }).display.columnsMinWidth, 60);
+  assert.equal(mergeConfig({ display: { columnsMinWidth: -5 } }).display.columnsMinWidth, 60);
+});
+
+test('mergeConfig clamps columnsMinWidth above 500 down to 500', () => {
+  assert.equal(mergeConfig({ display: { columnsMinWidth: 9999 } }).display.columnsMinWidth, 500);
+});
+
+test('mergeConfig preserves in-range columnsMinWidth', () => {
+  assert.equal(mergeConfig({ display: { columnsMinWidth: 120 } }).display.columnsMinWidth, 120);
+  assert.equal(mergeConfig({ display: { columnsMinWidth: 60 } }).display.columnsMinWidth, 60);
+  assert.equal(mergeConfig({ display: { columnsMinWidth: 500 } }).display.columnsMinWidth, 500);
+});
+
+test('mergeConfig falls back to default columnsMinWidth for non-numeric input', () => {
+  assert.equal(mergeConfig({ display: { columnsMinWidth: 'wide' } }).display.columnsMinWidth, 100);
+  assert.equal(mergeConfig({ display: { columnsMinWidth: null } }).display.columnsMinWidth, 100);
+  assert.equal(mergeConfig({ display: { columnsMinWidth: NaN } }).display.columnsMinWidth, 100);
+});
+
+test('mergeConfig: omitting new columns keys preserves all other display fields', () => {
+  const baseline = mergeConfig({});
+  const withNewKeys = mergeConfig({ display: {} });
+  assert.deepEqual(withNewKeys.display, baseline.display, 'omitting new keys should not perturb other display fields');
+});
+

@@ -23,6 +23,12 @@ export type ModelFormatMode = 'full' | 'compact' | 'short';
  *   multiline - Tree-style per agent: ├─ e explore  45s  searching for test files
  */
 export type AgentsFormat = 'compact' | 'multiline';
+/**
+ * Todos display format:
+ *   line      - Single-line summary (existing behaviour)
+ *   checklist - Multi-line: last-completed + active + next-pending
+ */
+export type TodosFormat = 'line' | 'checklist';
 export type HudElement = 'project' | 'context' | 'usage' | 'memory' | 'environment' | 'tools' | 'agents' | 'todos';
 export type HudColorName =
   | 'dim'
@@ -97,6 +103,25 @@ export interface HudConfig {
     agentsFormat: AgentsFormat;
     agentsMaxLines: number;
     showTodos: boolean;
+    /**
+     * When true (and terminal is wide enough), render `agents` and `todos`
+     * as side-by-side columns separated by ` │ `. Falls back to stacked
+     * layout when `terminalWidth < columnsMinWidth` or either column empty.
+     */
+    columns: boolean;
+    /** Todos rendering mode: `line` (single-line summary) or `checklist` (multi-line). */
+    todosFormat: TodosFormat;
+    /**
+     * Minimum terminal width (in columns) required to activate the
+     * side-by-side `columns` layout. Clamped to [60, 500].
+     *
+     * Default `100` leaves ~48 chars per column after the ` │ ` separator
+     * ((100 - 3) / 2 = 48). The agents-multiline renderer consumes ~24
+     * chars of overhead per row (icon + shortName(12) + duration(4) +
+     * spacing), leaving ~24 chars for the description at the minimum --
+     * tight but acceptable. Bump to `120` for roomier descriptions.
+     */
+    columnsMinWidth: number;
     showSessionName: boolean;
     showClaudeCodeVersion: boolean;
     showMemoryUsage: boolean;
@@ -146,6 +171,9 @@ export const DEFAULT_CONFIG: HudConfig = {
     agentsFormat: 'compact',
     agentsMaxLines: 5,
     showTodos: false,
+    columns: false,
+    todosFormat: 'line',
+    columnsMinWidth: 100,
     showSessionName: false,
     showClaudeCodeVersion: false,
     showMemoryUsage: false,
@@ -205,6 +233,17 @@ function validateModelFormat(value: unknown): value is ModelFormatMode {
 
 function validateAgentsFormat(value: unknown): value is AgentsFormat {
   return value === 'compact' || value === 'multiline';
+}
+
+function validateTodosFormat(value: unknown): value is TodosFormat {
+  return value === 'line' || value === 'checklist';
+}
+
+function clampColumnsMinWidth(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    return DEFAULT_CONFIG.display.columnsMinWidth;
+  }
+  return Math.max(60, Math.min(500, Math.floor(v)));
 }
 
 function clampAgentsMaxLines(v: unknown): number {
@@ -391,6 +430,13 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     showTodos: typeof migrated.display?.showTodos === 'boolean'
       ? migrated.display.showTodos
       : DEFAULT_CONFIG.display.showTodos,
+    columns: typeof migrated.display?.columns === 'boolean'
+      ? migrated.display.columns
+      : DEFAULT_CONFIG.display.columns,
+    todosFormat: validateTodosFormat(migrated.display?.todosFormat)
+      ? migrated.display.todosFormat
+      : DEFAULT_CONFIG.display.todosFormat,
+    columnsMinWidth: clampColumnsMinWidth(migrated.display?.columnsMinWidth),
     showSessionName: typeof migrated.display?.showSessionName === 'boolean'
       ? migrated.display.showSessionName
       : DEFAULT_CONFIG.display.showSessionName,

@@ -11,6 +11,11 @@ interface TranscriptLine {
   type?: string;
   slug?: string;
   customTitle?: string;
+  // Top-level `content` is used by Claude Code for out-of-band records such as
+  // `{"type":"queue-operation", ..., "content":"<task-notification>..."}` that
+  // report background-agent lifecycle events. These records have NO `message`
+  // wrapper, so the normal assistant/user path does not see them.
+  content?: string;
   message?: {
     // Claude Code writes assistant/user messages with either a content-block
     // array (normal messages) OR a plain string (e.g. background-agent
@@ -344,6 +349,36 @@ function isAsyncAgentLaunchResult(
   return startsWithAsyncLaunch((first as { text?: string }).text);
 }
 
+/**
+ * Resolve a `<task-notification>` completion payload to its launching agent
+ * and flip it from `running` to `completed`. Shared by the three call sites
+ * that can carry such a block: user-role string-content messages, foreground
+ * tool_result blocks, and top-level `queue-operation` records.
+ */
+function applyTaskNotificationCompletion(
+  text: string | Array<{ type?: string; text?: string }> | undefined,
+  agentMap: Map<string, AgentEntry>,
+  timestamp: Date,
+  backgroundAgentMap?: BackgroundAgentMap
+): void {
+  const taskOutput = parseTaskOutputResult(text);
+  if (!taskOutput || taskOutput.status !== 'completed') return;
+
+  let toolUseId: string | undefined;
+  if (taskOutput.toolUseId) {
+    toolUseId = taskOutput.toolUseId;
+  } else if (backgroundAgentMap) {
+    toolUseId = backgroundAgentMap.get(taskOutput.taskId);
+  }
+  if (!toolUseId) return;
+
+  const agent = agentMap.get(toolUseId);
+  if (agent && agent.status === 'running') {
+    agent.status = 'completed';
+    agent.endTime = timestamp;
+  }
+}
+
 function processEntry(
   entry: TranscriptLine,
   toolMap: Map<string, ToolEntry>,
@@ -357,6 +392,16 @@ function processEntry(
 
   if (!result.sessionStart && entry.timestamp) {
     result.sessionStart = timestamp;
+  }
+
+  // Top-level `queue-operation` records sit OUTSIDE the message envelope and
+  // carry background-agent completion notifications as a string `content`
+  // field. Without this branch, background agents never flip to `completed`.
+  if (entry.type === 'queue-operation' && typeof entry.content === 'string') {
+    if (entry.content.includes('<task-notification>')) {
+      applyTaskNotificationCompletion(entry.content, agentMap, timestamp, backgroundAgentMap);
+    }
+    return;
   }
 
   const content = entry.message?.content;
@@ -374,24 +419,7 @@ function processEntry(
       || content.includes('<task_id>')
       || content.includes('<task-id>')
     ) {
-      const taskOutput = parseTaskOutputResult(content);
-      if (taskOutput && taskOutput.status === 'completed') {
-        // Prefer direct tool-use-id lookup; fall back to the agentId mapping
-        // recorded at launch time.
-        let toolUseId: string | undefined;
-        if (taskOutput.toolUseId) {
-          toolUseId = taskOutput.toolUseId;
-        } else if (backgroundAgentMap) {
-          toolUseId = backgroundAgentMap.get(taskOutput.taskId);
-        }
-        if (toolUseId) {
-          const agent = agentMap.get(toolUseId);
-          if (agent && agent.status === 'running') {
-            agent.status = 'completed';
-            agent.endTime = timestamp;
-          }
-        }
-      }
+      applyTaskNotificationCompletion(content, agentMap, timestamp, backgroundAgentMap);
     }
     return;
   }
@@ -525,24 +553,9 @@ function processEntry(
       }
 
       // Foreground tool_results may also carry an inline <task-notification>
-      // completion block — handle that case for parity with OMC.
+      // completion block -- handle that case for parity with OMC.
       if (block.content != null) {
-        const taskOutput = parseTaskOutputResult(block.content);
-        if (taskOutput && taskOutput.status === 'completed') {
-          let toolUseId: string | undefined;
-          if (taskOutput.toolUseId) {
-            toolUseId = taskOutput.toolUseId;
-          } else if (backgroundAgentMap) {
-            toolUseId = backgroundAgentMap.get(taskOutput.taskId);
-          }
-          if (toolUseId) {
-            const bgAgent = agentMap.get(toolUseId);
-            if (bgAgent && bgAgent.status === 'running') {
-              bgAgent.status = 'completed';
-              bgAgent.endTime = timestamp;
-            }
-          }
-        }
+        applyTaskNotificationCompletion(block.content, agentMap, timestamp, backgroundAgentMap);
       }
     }
   }

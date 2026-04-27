@@ -60,3 +60,8 @@ bun.lock
 
 # Local dev-install config (written when symlinked into ~/.claude/plugins)
 config.json
+
+# Local dev-run caches
+.usage-cache.json
+config-cache/
+transcript-cache/

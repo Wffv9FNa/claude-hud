@@ -46,6 +46,9 @@ export const DEFAULT_CONFIG = {
         agentsFormat: 'compact',
         agentsMaxLines: 5,
         showTodos: false,
+        columns: false,
+        todosFormat: 'line',
+        columnsMinWidth: 100,
         showSessionName: false,
         showClaudeCodeVersion: false,
         showMemoryUsage: false,
@@ -97,6 +100,15 @@ function validateModelFormat(value) {
 }
 function validateAgentsFormat(value) {
     return value === 'compact' || value === 'multiline';
+}
+function validateTodosFormat(value) {
+    return value === 'line' || value === 'checklist';
+}
+function clampColumnsMinWidth(v) {
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+        return DEFAULT_CONFIG.display.columnsMinWidth;
+    }
+    return Math.max(60, Math.min(500, Math.floor(v)));
 }
 function clampAgentsMaxLines(v) {
     if (typeof v !== 'number' || !Number.isFinite(v)) {
@@ -266,6 +278,13 @@ export function mergeConfig(userConfig) {
         showTodos: typeof migrated.display?.showTodos === 'boolean'
             ? migrated.display.showTodos
             : DEFAULT_CONFIG.display.showTodos,
+        columns: typeof migrated.display?.columns === 'boolean'
+            ? migrated.display.columns
+            : DEFAULT_CONFIG.display.columns,
+        todosFormat: validateTodosFormat(migrated.display?.todosFormat)
+            ? migrated.display.todosFormat
+            : DEFAULT_CONFIG.display.todosFormat,
+        columnsMinWidth: clampColumnsMinWidth(migrated.display?.columnsMinWidth),
         showSessionName: typeof migrated.display?.showSessionName === 'boolean'
             ? migrated.display.showSessionName
             : DEFAULT_CONFIG.display.showSessionName,
