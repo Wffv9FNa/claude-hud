@@ -2,6 +2,14 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.0.18] - 2026-05-05
+
+### Fixed
+- Ship missing `dist/run-clear.js`, `dist/overrides.js`,
+  `dist/render/staleness.js`, and `dist/transcript-paths.js` that were
+  built locally but not committed in 0.0.17, causing
+  `ERR_MODULE_NOT_FOUND` when `/claude-hud:clear` invoked the CLI.
+
 ## [0.0.17] - 2026-05-05
 
 ### Added
