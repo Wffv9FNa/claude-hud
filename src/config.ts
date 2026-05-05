@@ -134,6 +134,14 @@ export interface HudConfig {
     modelFormat: ModelFormatMode;
     modelOverride: string;
     customLine: string;
+    staleness: {
+      enabled: boolean;
+      agentMs: number;
+      todoMs: number;
+      sessionIdleMs: number;
+      marker: string;
+      suffix: string;
+    };
   };
   colors: HudColorOverrides;
 }
@@ -186,6 +194,14 @@ export const DEFAULT_CONFIG: HudConfig = {
     modelFormat: 'full',
     modelOverride: '',
     customLine: '',
+    staleness: {
+      enabled: true,
+      agentMs: 1_800_000,
+      todoMs: 1_800_000,
+      sessionIdleMs: 300_000,
+      marker: '?',
+      suffix: ' (stale?)',
+    },
   },
   colors: {
     context: 'green',
@@ -244,6 +260,16 @@ function clampColumnsMinWidth(v: unknown): number {
     return DEFAULT_CONFIG.display.columnsMinWidth;
   }
   return Math.max(60, Math.min(500, Math.floor(v)));
+}
+
+const STALENESS_MIN_MS = 60_000;
+const STALENESS_MAX_MS = 24 * 60 * 60 * 1000;
+
+function clampStalenessMs(v: unknown, fallback: number): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    return fallback;
+  }
+  return Math.max(STALENESS_MIN_MS, Math.min(STALENESS_MAX_MS, Math.floor(v)));
 }
 
 function clampAgentsMaxLines(v: unknown): number {
@@ -467,6 +493,29 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     customLine: typeof migrated.display?.customLine === 'string'
       ? migrated.display.customLine.slice(0, 80)
       : DEFAULT_CONFIG.display.customLine,
+    staleness: {
+      enabled: typeof migrated.display?.staleness?.enabled === 'boolean'
+        ? migrated.display.staleness.enabled
+        : DEFAULT_CONFIG.display.staleness.enabled,
+      agentMs: clampStalenessMs(
+        migrated.display?.staleness?.agentMs,
+        DEFAULT_CONFIG.display.staleness.agentMs,
+      ),
+      todoMs: clampStalenessMs(
+        migrated.display?.staleness?.todoMs,
+        DEFAULT_CONFIG.display.staleness.todoMs,
+      ),
+      sessionIdleMs: clampStalenessMs(
+        migrated.display?.staleness?.sessionIdleMs,
+        DEFAULT_CONFIG.display.staleness.sessionIdleMs,
+      ),
+      marker: typeof migrated.display?.staleness?.marker === 'string'
+        ? migrated.display.staleness.marker.slice(0, 4)
+        : DEFAULT_CONFIG.display.staleness.marker,
+      suffix: typeof migrated.display?.staleness?.suffix === 'string'
+        ? migrated.display.staleness.suffix.slice(0, 32)
+        : DEFAULT_CONFIG.display.staleness.suffix,
+    },
   };
 
   const colors = {

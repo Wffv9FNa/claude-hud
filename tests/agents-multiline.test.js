@@ -279,3 +279,78 @@ test('multiline: falls back to 45-char default when terminalWidth is below floor
     assert.equal(narrowLine, nullLine, 'below-floor width should render identically to null');
   });
 });
+
+test('multiline: stale agent uses ? marker, dim colours, and (stale?) suffix', () => {
+  const now = 1_000_000;
+  withFixedNow(now, () => {
+    const agent = makeAgent('explore', 'haiku', now - 60_000, 'analysing');
+    const stale = { staleIds: new Set([agent.id]), marker: '?', suffix: ' (stale?)' };
+    const { detailLines } = renderAgentsMultiLine([agent], 5, null, stale);
+    assert.equal(detailLines.length, 1);
+    const stripped = stripAnsi(detailLines[0]);
+    assert.ok(stripped.includes(' ? explore'), `expected '?' marker in stale row: ${stripped}`);
+    assert.ok(stripped.includes('   ?'), `expected '?' duration freeze: ${stripped}`);
+    assert.ok(stripped.endsWith(' (stale?)'), `expected stale suffix: ${stripped}`);
+    // The whole row should be wrapped in DIM (\x1b[2m).
+    assert.ok(detailLines[0].startsWith('\x1b[2m'), `expected DIM wrap on stale row: ${JSON.stringify(detailLines[0])}`);
+    // Should NOT contain the duration colour escape used for non-stale rows.
+    assert.ok(!detailLines[0].includes('\x1b[31m') && !detailLines[0].includes('\x1b[32m') && !detailLines[0].includes('\x1b[33m'),
+      `stale row should not carry green/yellow/red duration colour: ${JSON.stringify(detailLines[0])}`);
+  });
+});
+
+test('multiline: non-stale long-running agent renders normally', () => {
+  const now = 1_000_000;
+  withFixedNow(now, () => {
+    const agent = makeAgent('explore', 'haiku', now - 6 * 60_000, 'still active');
+    const stale = { staleIds: new Set(), marker: '?', suffix: ' (stale?)' };
+    const { detailLines } = renderAgentsMultiLine([agent], 5, null, stale);
+    const stripped = stripAnsi(detailLines[0]);
+    assert.ok(stripped.includes(' e explore'), `non-stale row keeps normal code: ${stripped}`);
+    assert.ok(!stripped.endsWith(' (stale?)'), `non-stale row must not carry stale suffix: ${stripped}`);
+  });
+});
+
+test('multiline: non-stale agents sort before stale before truncation (4 fresh + 5 stale, max=5)', () => {
+  const now = 1_000_000;
+  withFixedNow(now, () => {
+    // 5 stale agents, freshest of which is now-100s. 4 non-stale agents older
+    // (start at now - 5min). Without the sort, the freshest-first ordering
+    // would push all 4 non-stale ones below the cut.
+    const stale = [
+      makeAgent('stale-a', 'haiku', now - 100_000, 'sa'),
+      makeAgent('stale-b', 'haiku', now - 110_000, 'sb'),
+      makeAgent('stale-c', 'haiku', now - 120_000, 'sc'),
+      makeAgent('stale-d', 'haiku', now - 130_000, 'sd'),
+      makeAgent('stale-e', 'haiku', now - 140_000, 'se'),
+    ];
+    const fresh = [
+      makeAgent('fresh-a', 'haiku', now - 300_000, 'fa'),
+      makeAgent('fresh-b', 'haiku', now - 310_000, 'fb'),
+      makeAgent('fresh-c', 'haiku', now - 320_000, 'fc'),
+      makeAgent('fresh-d', 'haiku', now - 330_000, 'fd'),
+    ];
+    const all = [...stale, ...fresh];
+    const staleIds = new Set(stale.map((a) => a.id));
+    const result = renderAgentsMultiLine(all, 5, null, { staleIds, marker: '?', suffix: ' (stale?)' });
+    // 5 lines kept = 4 fresh + 1 stale (no overflow indicator? running.length=9 > 5 -> overflow line added)
+    // detailLines = 5 visible rows + 1 overflow.
+    assert.equal(result.detailLines.length, 6);
+    const visibleStripped = result.detailLines.slice(0, 5).map(stripAnsi).join('\n');
+    for (const f of fresh) {
+      assert.ok(visibleStripped.includes(f.description), `fresh agent ${f.description} must remain visible: ${visibleStripped}`);
+    }
+    assert.ok(result.detailLines[5].includes('+4 more agents...'), `expected overflow indicator showing 4 hidden: ${result.detailLines[5]}`);
+  });
+});
+
+test('multiline: omitting staleness options leaves rendering unchanged (legacy callers)', () => {
+  const now = 1_000_000;
+  withFixedNow(now, () => {
+    const agent = makeAgent('explore', 'haiku', now - 5_000, 'desc');
+    const a = renderAgentsMultiLine([agent]).detailLines[0];
+    const b = renderAgentsMultiLine([agent], 5, null).detailLines[0];
+    assert.equal(a, b);
+    assert.ok(!stripAnsi(a).includes('(stale?)'));
+  });
+});

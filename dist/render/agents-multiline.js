@@ -52,12 +52,23 @@ export function formatDurationPadded(durationMs) {
 function sortByFreshest(agents) {
     return [...agents].sort((a, b) => b.startTime.getTime() - a.startTime.getTime());
 }
-export function renderAgentsMultiLine(agents, maxLines = 5, terminalWidth = null) {
+export function renderAgentsMultiLine(agents, maxLines = 5, terminalWidth = null, staleness) {
     const filtered = agents.filter((a) => a.status === 'running');
     if (filtered.length === 0) {
         return { headerPart: '', detailLines: [] };
     }
-    const running = sortByFreshest(filtered);
+    const staleIds = staleness?.staleIds ?? new Set();
+    const marker = staleness?.marker ?? '?';
+    const suffix = staleness?.suffix ?? ' (stale?)';
+    // Sort: freshest first, but always non-stale before stale so real running
+    // agents are never pushed off the visible window by stuck stale ones.
+    const sortedByFresh = sortByFreshest(filtered);
+    const running = staleIds.size > 0
+        ? [
+            ...sortedByFresh.filter((a) => !staleIds.has(a.id)),
+            ...sortedByFresh.filter((a) => staleIds.has(a.id)),
+        ]
+        : sortedByFresh;
     const headerPart = `agents:${CYAN}${running.length}${RESET}`;
     const displayCount = Math.min(running.length, maxLines);
     const now = Date.now();
@@ -68,15 +79,17 @@ export function renderAgentsMultiLine(agents, maxLines = 5, terminalWidth = null
     running.slice(0, maxLines).forEach((agent, index) => {
         const isLast = index === displayCount - 1 && running.length <= maxLines;
         const prefix = isLast ? '└─' : '├─';
-        const code = getAgentCode(agent.type, agent.model);
-        const color = getModelTierColor(agent.model);
+        const isStale = staleIds.has(agent.id);
+        const code = isStale ? marker : getAgentCode(agent.type, agent.model);
+        const codeColor = isStale ? '\x1b[2m' : getModelTierColor(agent.model);
         const shortName = getShortAgentName(agent.type).padEnd(12);
         const durationMs = now - agent.startTime.getTime();
-        const duration = formatDurationPadded(durationMs);
-        const durationColor = getDurationColor(durationMs);
+        const duration = isStale ? '   ?' : formatDurationPadded(durationMs);
+        const durationColor = isStale ? '\x1b[2m' : getDurationColor(durationMs);
         const desc = agent.description || '...';
         const truncatedDesc = truncateToWidth(desc, maxDescWidth);
-        detailLines.push(`${dim(prefix)} ${color}${code}${RESET} ${dim(shortName)}${durationColor}${duration}${RESET}  ${truncatedDesc}`);
+        const row = `${dim(prefix)} ${codeColor}${code}${RESET} ${dim(shortName)}${durationColor}${duration}${RESET}  ${truncatedDesc}`;
+        detailLines.push(isStale ? dim(`${row}${suffix}`) : row);
     });
     if (running.length > maxLines) {
         detailLines.push(dim(`└─ +${running.length - maxLines} more agents...`));

@@ -1,5 +1,6 @@
-import { yellow, green, magenta, label } from './colors.js';
+import { yellow, green, magenta, label, dim } from './colors.js';
 import { renderAgentsMultiLine } from './agents-multiline.js';
+import { isAgentStale } from './staleness.js';
 const MAX_RECENT_COMPLETED = 2;
 const MAX_AGENTS_SHOWN = 3;
 export function renderAgentsLine(ctx, terminalWidth = null) {
@@ -28,19 +29,40 @@ function renderAgentsCompact(ctx) {
     if (toShow.length === 0) {
         return null;
     }
+    const now = Date.now();
+    const staleIds = new Set();
+    if (ctx.config?.display?.staleness) {
+        for (const a of toShow) {
+            if (isAgentStale(a, ctx.transcript, ctx.config, now)) {
+                staleIds.add(a.id);
+            }
+        }
+    }
+    const suffix = ctx.config?.display?.staleness?.suffix ?? ' (stale?)';
     const lines = [];
     for (const agent of toShow) {
-        lines.push(formatAgent(agent, colors));
+        lines.push(formatAgent(agent, colors, staleIds.has(agent.id), suffix));
     }
     return lines.join('\n');
 }
 function renderAgentsMultilineWrapped(ctx, terminalWidth = null) {
     const { agents } = ctx.transcript;
     const maxLines = ctx.config?.display?.agentsMaxLines ?? 5;
+    const now = Date.now();
+    const staleIds = new Set();
+    if (ctx.config?.display?.staleness) {
+        for (const a of agents) {
+            if (a.status === 'running' && isAgentStale(a, ctx.transcript, ctx.config, now)) {
+                staleIds.add(a.id);
+            }
+        }
+    }
+    const marker = ctx.config?.display?.staleness?.marker ?? '?';
+    const suffix = ctx.config?.display?.staleness?.suffix ?? ' (stale?)';
     // Multiline mode shows only running agents; renderAgentsMultiLine filters
     // internally to status === 'running' and caps detail rows by `maxLines`.
     // Pass all agents through so the header reports the true running count.
-    const { headerPart, detailLines } = renderAgentsMultiLine(agents, maxLines, terminalWidth);
+    const { headerPart, detailLines } = renderAgentsMultiLine(agents, maxLines, terminalWidth, { staleIds, marker, suffix });
     if (detailLines.length === 0) {
         return null;
     }
@@ -55,7 +77,15 @@ function getStatusIcon(status) {
             return green('✓');
     }
 }
-function formatAgent(agent, colors) {
+function formatAgent(agent, colors, isStale = false, suffix = ' (stale?)') {
+    if (isStale) {
+        const statusIcon = dim('?');
+        const type = dim(agent.type);
+        const model = agent.model ? dim(`[${agent.model}]`) : '';
+        const desc = agent.description ? dim(`: ${truncateDesc(agent.description)}`) : '';
+        const elapsed = dim('(?)');
+        return `${statusIcon} ${type}${model ? ` ${model}` : ''}${desc} ${elapsed}${dim(suffix)}`;
+    }
     const statusIcon = getStatusIcon(agent.status);
     const type = magenta(agent.type);
     const model = agent.model ? label(`[${agent.model}]`, colors) : '';

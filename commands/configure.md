@@ -275,6 +275,38 @@ If user chooses "Remove", set `display.customLine` to `""` in config.
 
 ---
 
+## Staleness (Stuck Agents / Todos)
+
+The HUD visually demotes (dims and marks with `?`) running agents and
+in_progress todos that appear to be stuck. An item is treated as stale
+only when ALL of the following hold:
+
+- the per-item age exceeds `agentMs` / `todoMs`,
+- the transcript file has been idle for at least `sessionIdleMs`, and
+- no newer tool activity has been recorded since the item started.
+
+Stale items are never dropped; they keep rendering with reduced visual
+weight and a trailing ` (stale?)` suffix. To remove them outright, run
+`/claude-hud:clear` (writes a per-transcript override file).
+
+These knobs are not asked in the guided flow but are preserved on save
+and can be edited manually in `config.json` under `display.staleness`:
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `display.staleness.enabled` | boolean | `true` | Master switch for stale-item visual demotion. |
+| `display.staleness.agentMs` | number | `1800000` | Per-agent age threshold in ms (30 min). Clamped to `[60000, 86400000]`. |
+| `display.staleness.todoMs` | number | `1800000` | Per-todo age threshold in ms (30 min). Clamped to `[60000, 86400000]`. |
+| `display.staleness.sessionIdleMs` | number | `300000` | Transcript-idle threshold in ms (5 min). Clamped to `[60000, 86400000]`. |
+| `display.staleness.marker` | string | `"?"` | Replacement glyph for stale rows. Truncated to 4 characters. |
+| `display.staleness.suffix` | string | `" (stale?)"` | Suffix appended to stale rows. Leading space is intentional and is NOT trimmed. Truncated to 32 characters. |
+
+Set `display.staleness.enabled` to `false` to disable visual demotion
+entirely. The `/claude-hud:clear` slash command works regardless of this
+setting.
+
+---
+
 ## Usage Style Mapping
 
 | Option | Config |

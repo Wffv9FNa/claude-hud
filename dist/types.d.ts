@@ -52,10 +52,13 @@ export interface AgentEntry {
     status: 'running' | 'completed';
     startTime: Date;
     endTime?: Date;
+    isStale?: boolean;
 }
 export interface TodoItem {
     content: string;
     status: 'pending' | 'in_progress' | 'completed';
+    startTime?: Date;
+    isStale?: boolean;
 }
 export interface UsageData {
     fiveHour: number | null;
@@ -84,6 +87,11 @@ export interface TranscriptData {
     sessionStart?: Date;
     sessionName?: string;
     sessionTokens?: SessionTokenUsage;
+    transcriptMtimeMs?: number;
+    overridesApplied?: {
+        clearAgentsBefore?: string;
+        clearTodosBefore?: string;
+    };
 }
 export interface RenderContext {
     stdin: StdinData;

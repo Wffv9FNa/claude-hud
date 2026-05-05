@@ -2,9 +2,11 @@ import * as fs from 'fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as readline from 'readline';
-import { createHash } from 'node:crypto';
-import { getHudPluginDir } from './claude-config-dir.js';
+import { getTranscriptCachePath } from './transcript-paths.js';
+import { readOverride, applyOverrides } from './overrides.js';
 import type { TranscriptData, ToolEntry, AgentEntry, TodoItem, SessionTokenUsage } from './types.js';
+
+const TRANSCRIPT_CACHE_SCHEMA = 2;
 
 interface TranscriptLine {
   timestamp?: string;
@@ -61,16 +63,21 @@ interface SerializedAgentEntry extends Omit<AgentEntry, 'startTime' | 'endTime'>
   endTime?: string;
 }
 
+interface SerializedTodoItem extends Omit<TodoItem, 'startTime'> {
+  startTime?: string;
+}
+
 interface SerializedTranscriptData {
   tools: SerializedToolEntry[];
   agents: SerializedAgentEntry[];
-  todos: TodoItem[];
+  todos: SerializedTodoItem[];
   sessionStart?: string;
   sessionName?: string;
   sessionTokens?: SessionTokenUsage;
 }
 
 interface TranscriptCacheFile {
+  schema?: number;
   transcriptPath: string;
   transcriptState: TranscriptFileState;
   data: SerializedTranscriptData;
@@ -100,11 +107,6 @@ function normalizeSessionTokens(tokens: unknown): SessionTokenUsage | undefined 
   };
 }
 
-function getTranscriptCachePath(transcriptPath: string, homeDir: string): string {
-  const hash = createHash('sha256').update(path.resolve(transcriptPath)).digest('hex');
-  return path.join(getHudPluginDir(homeDir), 'transcript-cache', `${hash}.json`);
-}
-
 function readTranscriptFileState(transcriptPath: string): TranscriptFileState | null {
   try {
     const stat = fs.statSync(transcriptPath);
@@ -132,7 +134,14 @@ function serializeTranscriptData(data: TranscriptData): SerializedTranscriptData
       startTime: agent.startTime.toISOString(),
       endTime: agent.endTime?.toISOString(),
     })),
-    todos: data.todos.map((todo) => ({ ...todo })),
+    todos: data.todos.map((todo) => {
+      const { startTime, ...rest } = todo;
+      const out: SerializedTodoItem = { ...rest };
+      if (startTime) {
+        out.startTime = startTime.toISOString();
+      }
+      return out;
+    }),
     sessionStart: data.sessionStart?.toISOString(),
     sessionName: data.sessionName,
     sessionTokens: data.sessionTokens,
@@ -151,7 +160,14 @@ function deserializeTranscriptData(data: SerializedTranscriptData): TranscriptDa
       startTime: new Date(agent.startTime),
       endTime: agent.endTime ? new Date(agent.endTime) : undefined,
     })),
-    todos: data.todos.map((todo) => ({ ...todo })),
+    todos: data.todos.map((todo) => {
+      const { startTime, ...rest } = todo;
+      const out: TodoItem = { ...rest };
+      if (startTime) {
+        out.startTime = new Date(startTime);
+      }
+      return out;
+    }),
     sessionStart: data.sessionStart ? new Date(data.sessionStart) : undefined,
     sessionName: data.sessionName,
     sessionTokens: normalizeSessionTokens(data.sessionTokens),
@@ -164,7 +180,8 @@ function readTranscriptCache(transcriptPath: string, state: TranscriptFileState)
     const raw = fs.readFileSync(cachePath, 'utf8');
     const parsed = JSON.parse(raw) as TranscriptCacheFile;
     if (
-      parsed.transcriptPath !== path.resolve(transcriptPath)
+      parsed.schema !== TRANSCRIPT_CACHE_SCHEMA
+      || parsed.transcriptPath !== path.resolve(transcriptPath)
       || parsed.transcriptState?.mtimeMs !== state.mtimeMs
       || parsed.transcriptState?.size !== state.size
     ) {
@@ -182,6 +199,7 @@ function writeTranscriptCache(transcriptPath: string, state: TranscriptFileState
     const cachePath = getTranscriptCachePath(transcriptPath, os.homedir());
     fs.mkdirSync(path.dirname(cachePath), { recursive: true });
     const payload: TranscriptCacheFile = {
+      schema: TRANSCRIPT_CACHE_SCHEMA,
       transcriptPath: path.resolve(transcriptPath),
       transcriptState: state,
       data: serializeTranscriptData(data),
@@ -210,7 +228,8 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
 
   const cached = readTranscriptCache(transcriptPath, transcriptState);
   if (cached) {
-    return cached;
+    cached.transcriptMtimeMs = transcriptState.mtimeMs;
+    return applyOverrides(cached, readOverride(transcriptPath));
   }
 
   const toolMap = new Map<string, ToolEntry>();
@@ -218,6 +237,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
   const backgroundAgentMap: BackgroundAgentMap = new Map();
   let latestTodos: TodoItem[] = [];
   const taskIdToIndex = new Map<string, number>();
+  const taskIdToStartTime = new Map<string, Date>();
   let latestSlug: string | undefined;
   let customTitle: string | undefined;
   const sessionTokens: SessionTokenUsage = {
@@ -254,7 +274,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
           sessionTokens.cacheCreationTokens += normalizeTokenCount(usage.cache_creation_input_tokens);
           sessionTokens.cacheReadTokens += normalizeTokenCount(usage.cache_read_input_tokens);
         }
-        processEntry(entry, toolMap, agentMap, taskIdToIndex, latestTodos, result, backgroundAgentMap);
+        processEntry(entry, toolMap, agentMap, taskIdToIndex, taskIdToStartTime, latestTodos, result, backgroundAgentMap);
       } catch {
         // Skip malformed lines
       }
@@ -267,14 +287,34 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
 
   result.tools = Array.from(toolMap.values()).slice(-20);
   result.agents = Array.from(agentMap.values()).slice(-10);
+
+  // Project taskIdToStartTime onto latestTodos by index. If multiple taskIds
+  // map to the same index, keep the earliest startTime.
+  const indexToStartTime = new Map<number, Date>();
+  for (const [taskId, startTime] of taskIdToStartTime) {
+    const idx = taskIdToIndex.get(taskId);
+    if (typeof idx !== 'number') continue;
+    const prior = indexToStartTime.get(idx);
+    if (!prior || startTime.getTime() < prior.getTime()) {
+      indexToStartTime.set(idx, startTime);
+    }
+  }
+  for (let i = 0; i < latestTodos.length; i++) {
+    const st = indexToStartTime.get(i);
+    if (st && latestTodos[i].status === 'in_progress') {
+      latestTodos[i].startTime = st;
+    }
+  }
+
   result.todos = latestTodos;
   result.sessionName = customTitle ?? latestSlug;
   result.sessionTokens = sessionTokens;
   if (parsedCleanly) {
     writeTranscriptCache(transcriptPath, transcriptState, result);
   }
+  result.transcriptMtimeMs = transcriptState.mtimeMs;
 
-  return result;
+  return applyOverrides(result, readOverride(transcriptPath));
 }
 
 export function _setCreateReadStreamForTests(impl: typeof fs.createReadStream | null): void {
@@ -384,6 +424,7 @@ function processEntry(
   toolMap: Map<string, ToolEntry>,
   agentMap: Map<string, AgentEntry>,
   taskIdToIndex: Map<string, number>,
+  taskIdToStartTime: Map<string, Date>,
   latestTodos: TodoItem[],
   result: TranscriptData,
   backgroundAgentMap?: BackgroundAgentMap
@@ -455,14 +496,18 @@ function processEntry(
       } else if (block.name === 'TodoWrite' || block.name === 'proxy_TodoWrite') {
         const input = block.input as { todos?: TodoItem[] };
         if (input?.todos && Array.isArray(input.todos)) {
-          // Build reverse map: content → taskIds from existing state
+          // Build reverse map: content -> taskIds from existing state. Capture
+          // prior status per content so we can detect transitions into
+          // in_progress for first-time startTime stamping.
           const contentToTaskIds = new Map<string, string[]>();
+          const contentToPriorStatus = new Map<string, TodoItem['status']>();
           for (const [taskId, idx] of taskIdToIndex) {
             if (idx < latestTodos.length) {
               const content = latestTodos[idx].content;
               const ids = contentToTaskIds.get(content) ?? [];
               ids.push(taskId);
               contentToTaskIds.set(content, ids);
+              contentToPriorStatus.set(content, latestTodos[idx].status);
             }
           }
 
@@ -470,14 +515,40 @@ function processEntry(
           taskIdToIndex.clear();
           latestTodos.push(...input.todos);
 
-          // Re-register taskId mappings for items whose content matches
+          // Re-register taskId mappings for items whose content matches; for
+          // items without a prior taskId, mint a synthetic one so the
+          // start-time map can key on it.
           for (let i = 0; i < latestTodos.length; i++) {
-            const ids = contentToTaskIds.get(latestTodos[i].content);
+            const todo = latestTodos[i];
+            const ids = contentToTaskIds.get(todo.content);
             if (ids) {
               for (const taskId of ids) {
                 taskIdToIndex.set(taskId, i);
               }
-              contentToTaskIds.delete(latestTodos[i].content);
+              const priorStatus = contentToPriorStatus.get(todo.content);
+              contentToTaskIds.delete(todo.content);
+              contentToPriorStatus.delete(todo.content);
+              if (todo.status === 'in_progress') {
+                if (priorStatus !== 'in_progress') {
+                  // Transition into in_progress -> stamp now.
+                  for (const taskId of ids) {
+                    taskIdToStartTime.set(taskId, timestamp);
+                  }
+                }
+                // Else: stays in_progress -> retain existing startTime.
+              } else {
+                // Left in_progress (or never was) -> drop any prior stamp.
+                for (const taskId of ids) {
+                  taskIdToStartTime.delete(taskId);
+                }
+              }
+            } else if (todo.status === 'in_progress') {
+              // First sighting of this todo with no taskId mapping. Mint a
+              // synthetic taskId keyed by the TodoWrite tool_use id + index
+              // so it survives subsequent snapshots via content rematching.
+              const syntheticId = `${block.id}:${i}`;
+              taskIdToIndex.set(syntheticId, i);
+              taskIdToStartTime.set(syntheticId, timestamp);
             }
           }
         }
@@ -495,6 +566,9 @@ function processEntry(
           : block.id;
         if (taskId) {
           taskIdToIndex.set(taskId, latestTodos.length - 1);
+          if (status === 'in_progress') {
+            taskIdToStartTime.set(taskId, timestamp);
+          }
         }
       } else if (block.name === 'TaskUpdate') {
         const input = block.input as Record<string, unknown>;
@@ -510,6 +584,33 @@ function processEntry(
           const content = subject || description;
           if (content) {
             latestTodos[index].content = content;
+          }
+
+          // Track in_progress transitions for the taskIds mapped to this index.
+          if (status) {
+            const rawTaskId = input?.taskId;
+            const directKey = typeof rawTaskId === 'string' || typeof rawTaskId === 'number'
+              ? String(rawTaskId)
+              : null;
+            const matchingIds: string[] = [];
+            if (directKey && taskIdToIndex.get(directKey) === index) {
+              matchingIds.push(directKey);
+            } else {
+              for (const [tid, idx] of taskIdToIndex) {
+                if (idx === index) matchingIds.push(tid);
+              }
+            }
+            if (status === 'in_progress') {
+              for (const tid of matchingIds) {
+                if (!taskIdToStartTime.has(tid)) {
+                  taskIdToStartTime.set(tid, timestamp);
+                }
+              }
+            } else {
+              for (const tid of matchingIds) {
+                taskIdToStartTime.delete(tid);
+              }
+            }
           }
         }
       } else {

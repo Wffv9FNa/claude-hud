@@ -1,6 +1,7 @@
 import type { RenderContext, TodoItem } from "../types.js";
 import { yellow, green, dim, label } from "./colors.js";
 import { t } from "../i18n/index.js";
+import { isTodoStale } from "./staleness.js";
 
 export function renderTodosLine(ctx: RenderContext): string | null {
   const { todos } = ctx.transcript;
@@ -12,15 +13,21 @@ export function renderTodosLine(ctx: RenderContext): string | null {
 
   const format = ctx.config?.display?.todosFormat ?? 'line';
   if (format === 'checklist') {
-    return renderChecklist(todos, colors);
+    return renderChecklist(todos, colors, ctx);
   }
 
-  return renderLine(todos, colors);
+  return renderLine(todos, colors, ctx);
+}
+
+function isInProgressStale(todo: TodoItem, ctx: RenderContext): boolean {
+  if (!ctx?.config?.display?.staleness || !ctx?.transcript) return false;
+  return isTodoStale(todo, ctx.transcript, ctx.config);
 }
 
 function renderLine(
   todos: TodoItem[],
-  colors: RenderContext['config']['colors']
+  colors: RenderContext['config']['colors'],
+  ctx: RenderContext
 ): string | null {
   const inProgress = todos.find((todo) => todo.status === "in_progress");
   const completed = todos.filter((todo) => todo.status === "completed").length;
@@ -35,13 +42,19 @@ function renderLine(
 
   const content = truncateContent(inProgress.content);
   const progress = label(`(${completed}/${total})`, colors);
+  const stale = isInProgressStale(inProgress, ctx);
+  const suffix = ctx.config?.display?.staleness?.suffix ?? ' (stale?)';
 
+  if (stale) {
+    return `${dim('?')} ${dim(content)} ${progress}${dim(suffix)}`;
+  }
   return `${yellow("▸")} ${content} ${progress}`;
 }
 
 function renderChecklist(
   todos: TodoItem[],
-  colors: RenderContext['config']['colors']
+  colors: RenderContext['config']['colors'],
+  ctx: RenderContext
 ): string | null {
   if (todos.length === 0) {
     return null;
@@ -65,7 +78,13 @@ function renderChecklist(
   }
 
   if (inProgress) {
-    lines.push(`${yellow("▸")} ${truncateContent(inProgress.content)} ${progress}`);
+    const stale = isInProgressStale(inProgress, ctx);
+    const suffix = ctx.config?.display?.staleness?.suffix ?? ' (stale?)';
+    if (stale) {
+      lines.push(`${dim('?')} ${dim(truncateContent(inProgress.content))} ${progress}${dim(suffix)}`);
+    } else {
+      lines.push(`${yellow("▸")} ${truncateContent(inProgress.content)} ${progress}`);
+    }
   }
 
   if (nextPending) {

@@ -10,6 +10,7 @@ import { getMemoryUsage } from "./memory.js";
 import { setLanguage, t } from "./i18n/index.js";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
+import { parseClearArgs, runClear } from "./run-clear.js";
 export async function main(overrides = {}) {
     const deps = {
         readStdin,
@@ -27,6 +28,17 @@ export async function main(overrides = {}) {
         log: console.log,
         ...overrides,
     };
+    // CLI write-mode: --clear must run BEFORE any stdin/render path so we never
+    // emit a single byte to stdout. All status output goes to stderr.
+    const clearParse = parseClearArgs(process.argv.slice(2));
+    if (clearParse.isClearMode) {
+        if (!clearParse.ok || !clearParse.args) {
+            console.error(`claude-hud: ${clearParse.error ?? 'invalid arguments'}`);
+            process.exit(2);
+        }
+        const code = runClear(clearParse.args);
+        process.exit(code);
+    }
     try {
         const stdin = await deps.readStdin();
         if (!stdin) {

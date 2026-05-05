@@ -2,6 +2,34 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.0.17] - 2026-05-05
+
+### Added
+- Stale-item visual demotion for stuck running agents and in_progress
+  todos. When (per-item age) AND (transcript-mtime idle) both exceed
+  thresholds AND no newer tool activity exists, the row renders dimmed
+  with a `?` marker and a trailing ` (stale?)` suffix. Items are never
+  dropped automatically. Configured via `display.staleness.*`
+  (`enabled`, `agentMs`, `todoMs`, `sessionIdleMs`, `marker`, `suffix`)
+  with sensible defaults (30 min agent/todo, 5 min idle).
+- `/claude-hud:clear [agents|todos|all]` slash command as a manual
+  escape hatch. Writes a per-transcript override file under
+  `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/claude-hud/overrides/`
+  that the renderer applies on subsequent ticks to drop stuck items
+  outright. New agents/todos started after the command are unaffected.
+  Override files older than 14 days are auto-cleaned on read.
+- Internal `--clear=<targets> --transcript=<path> --quiet` CLI mode in
+  `dist/index.js`, used by the slash command. Writes are atomic
+  (tmp + rename), monotonically clamped, roundtrip-verified, and emit
+  only to stderr; stdout is reserved for the statusline contract.
+
+### Changed
+- Transcript cache schema bumped to `schema: 2` to carry per-todo
+  `startTime` tracking. Existing cache files are invalidated and cold-
+  parsed on first run after upgrade. The first HUD frame after upgrade
+  may be empty for a single ~300ms tick on large transcripts; subsequent
+  ticks render normally.
+
 ## [0.0.14] - 2026-04-17
 
 ### Fixed

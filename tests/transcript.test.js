@@ -506,3 +506,154 @@ describe('parseTranscript: background-agent tracking', () => {
     }
   });
 });
+
+describe('parseTranscript: mtime, cache schema, todo startTime', () => {
+  test('populates transcriptMtimeMs on fresh parse', async () => {
+    const entries = [
+      {
+        timestamp: '2024-01-01T00:00:00.000Z',
+        message: { content: [] },
+      },
+    ];
+    const { dir, filePath } = await writeTranscript(entries);
+    try {
+      const result = await parseTranscript(filePath);
+      assert.equal(typeof result.transcriptMtimeMs, 'number');
+      assert.ok(result.transcriptMtimeMs > 0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('cache hit returns equivalent data with mtime populated; stale schema cache misses', async () => {
+    // Use isolated HOME so cache writes do not pollute the user's real cache.
+    const fakeHome = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+    const prevHome = process.env.HOME;
+    process.env.HOME = fakeHome;
+    const entries = [
+      {
+        timestamp: '2024-01-01T00:00:00.000Z',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_cache_1',
+              name: 'Read',
+              input: { file_path: '/x' },
+            },
+          ],
+        },
+      },
+    ];
+    const { dir, filePath } = await writeTranscript(entries);
+    try {
+      const first = await parseTranscript(filePath);
+      assert.equal(first.tools.length, 1);
+      assert.ok(first.transcriptMtimeMs);
+
+      // Second call should hit the cache and still expose the mtime.
+      const second = await parseTranscript(filePath);
+      assert.equal(second.tools.length, 1);
+      assert.equal(second.tools[0].id, 'toolu_cache_1');
+      assert.equal(second.transcriptMtimeMs, first.transcriptMtimeMs);
+
+      // Corrupt the cache file's schema and confirm a fresh parse still works
+      // (cache miss path).
+      const { createHash } = await import('node:crypto');
+      const hash = createHash('sha256').update(path.resolve(filePath)).digest('hex');
+      const cachePath = path.join(fakeHome, '.claude', 'plugins', 'claude-hud', 'transcript-cache', `${hash}.json`);
+      const fs = await import('node:fs');
+      const raw = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+      raw.schema = 1;
+      fs.writeFileSync(cachePath, JSON.stringify(raw), 'utf8');
+
+      const third = await parseTranscript(filePath);
+      assert.equal(third.tools.length, 1, 'stale-schema cache should be ignored and reparsed');
+      assert.ok(third.transcriptMtimeMs);
+    } finally {
+      if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+      await rm(dir, { recursive: true, force: true });
+      await rm(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  test('todo startTime persists across TaskUpdate content rename', async () => {
+    const entries = [
+      {
+        timestamp: '2024-01-01T00:00:00.000Z',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_tc',
+              name: 'TaskCreate',
+              input: { taskId: 't1', subject: 'Original subject', status: 'in_progress' },
+            },
+          ],
+        },
+      },
+      {
+        timestamp: '2024-01-01T00:05:00.000Z',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_tu',
+              name: 'TaskUpdate',
+              input: { taskId: 't1', subject: 'Renamed subject', status: 'in_progress' },
+            },
+          ],
+        },
+      },
+    ];
+    const { dir, filePath } = await writeTranscript(entries);
+    try {
+      const result = await parseTranscript(filePath);
+      assert.equal(result.todos.length, 1);
+      assert.equal(result.todos[0].content, 'Renamed subject');
+      assert.equal(result.todos[0].status, 'in_progress');
+      assert.ok(result.todos[0].startTime instanceof Date);
+      assert.equal(
+        result.todos[0].startTime.toISOString(),
+        '2024-01-01T00:00:00.000Z',
+        'startTime should track the original in_progress transition',
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('first-sighting in_progress TodoWrite falls back to message timestamp', async () => {
+    const entries = [
+      {
+        timestamp: '2024-02-02T03:04:05.000Z',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_tw',
+              name: 'TodoWrite',
+              input: {
+                todos: [
+                  { content: 'Task A', status: 'in_progress' },
+                  { content: 'Task B', status: 'pending' },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ];
+    const { dir, filePath } = await writeTranscript(entries);
+    try {
+      const result = await parseTranscript(filePath);
+      assert.equal(result.todos.length, 2);
+      assert.equal(result.todos[0].status, 'in_progress');
+      assert.ok(result.todos[0].startTime instanceof Date);
+      assert.equal(result.todos[0].startTime.toISOString(), '2024-02-02T03:04:05.000Z');
+      assert.equal(result.todos[1].startTime, undefined, 'pending todo gets no startTime');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

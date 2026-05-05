@@ -104,6 +104,14 @@ export interface HudConfig {
         modelFormat: ModelFormatMode;
         modelOverride: string;
         customLine: string;
+        staleness: {
+            enabled: boolean;
+            agentMs: number;
+            todoMs: number;
+            sessionIdleMs: number;
+            marker: string;
+            suffix: string;
+        };
     };
     colors: HudColorOverrides;
 }
