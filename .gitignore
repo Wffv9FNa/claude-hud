@@ -2,9 +2,12 @@
 node_modules/
 
 # Build artifacts
-# dist/ is gitignored but exists on main - CI builds and commits it after each merge.
-# See .github/workflows/build-dist.yml
-dist/
+# Fork divergence: upstream gitignores dist/ and relies on a CI workflow
+# (.github/workflows/build-dist.yml) to rebuild and commit it post-merge.
+# This fork ships dist/ manually on each release so users installing from the
+# fork get working compiled output without needing the CI step. Keeping dist/
+# tracked here means `git add` works normally and we stop hitting the
+# "paths are ignored" warning when committing rebuilt artefacts.
 *.tsbuildinfo
 
 # Logs
